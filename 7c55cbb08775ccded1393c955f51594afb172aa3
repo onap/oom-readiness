@@ -1,0 +1,9 @@
+Code-Review+2: LF Jenkins CI <releng+lf-jobbuilder@linuxfoundation.org>
+Code-Review+2: onap-release onap-release <collab-it+onap-release@linuxfoundation.org>
+Verified+1: LF Jenkins CI <releng+lf-jobbuilder@linuxfoundation.org>
+Verified+1: onap-release onap-release <collab-it+onap-release@linuxfoundation.org>
+Submitted-by: LF Jenkins CI <releng+lf-jobbuilder@linuxfoundation.org>
+Submitted-at: Thu, 30 Apr 2020 00:19:19 +0000
+Reviewed-on: https://gerrit.onap.org/r/c/oom/readiness/+/106551
+Project: oom/readiness
+Branch: refs/heads/master
