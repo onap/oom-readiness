@@ -1,0 +1,53 @@
+---
+project: 'oom_readiness'
+project_creation_date: '2020-04-30'
+project_category: ''
+lifecycle_state: 'Incubation'
+project_lead: &onap_oom_readiness_ptl
+    name: 'Sylvain Desbureaux'
+    email: 'sylvain.desbureaux@orange.com'
+    id: 'sdesbure'
+    company: 'Orange'
+    timezone: 'Paris/France'
+primary_contact: *onap_oom_readiness_ptl
+issue_tracking:
+    type: 'jira'
+    url: 'https://jira.onap.org/projects/'
+    key: 'oom_readiness'
+mailing_list:
+    type: 'groups.io'
+    url: 'technical-discuss@lists.onap.org'
+    tag: '[]'
+realtime_discussion:
+    type: 'irc'
+    server: 'freenode.net'
+    channel: '#onap'
+meetings:
+    - type: 'gotomeeting+irc'
+      agenda: 'https://wiki.onap.org/display/'
+      url: ''
+      server: 'freenode.net'
+      channel: '#onap'
+      repeats: ''
+      time: ''
+repositories:
+    - oom/readiness
+committers:
+    - <<: *onap_oom_readiness_ptl
+    - name: 'Krysztof Opasiak '
+      email: 'k.opasiak@samsung.com'
+      company: 'Samsung'
+      id: 'kopasiak'
+      timezone: 'Poland/Warsaw'
+    - name: 'Mike Eliott  '
+      email: 'mike.elliott@amdocs.com'
+      company: 'Amdocs'
+      id: 'melliott'
+      timezone: 'Canada/Ontario'
+tsc:
+    # yamllint disable rule:line-length
+    approval: 'https://lists.onap.org/g/onap-tsc/topic/onap_oom_new_repository/72873709?p=,,,20,0,0,0::recentpostdate%2Fsticky,,,20,2,20,72873709'
+    changes:
+        - type: ''
+          name: ''
+          link: ''
