@@ -22,6 +22,30 @@
       "revId": "4f18bdcff1d434a539354e01749f4b2ca84b849b",
       "serverId": "14b4e41f-c4e3-4fb9-9955-6a9b5656895a",
       "unresolved": true
+    },
+    {
+      "key": {
+        "uuid": "ca269e93_e1ec9b69",
+        "filename": "INFO.yaml",
+        "patchSetId": 1
+      },
+      "lineNbr": 31,
+      "author": {
+        "id": 3213
+      },
+      "writtenOn": "2020-05-11T18:30:44Z",
+      "side": 1,
+      "message": "should be \"oom/readiness\"",
+      "parentUuid": "71b22996_09595f38",
+      "range": {
+        "startLine": 31,
+        "startChar": 3,
+        "endLine": 31,
+        "endChar": 11
+      },
+      "revId": "4f18bdcff1d434a539354e01749f4b2ca84b849b",
+      "serverId": "14b4e41f-c4e3-4fb9-9955-6a9b5656895a",
+      "unresolved": true
     }
   ]
 }
