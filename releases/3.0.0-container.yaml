@@ -1,0 +1,8 @@
+distribution_type: 'container'
+container_release_tag: '3.0.0'
+project: 'oom/readiness'
+log_dir: 'oom-readiness-docker-merge-master/15'
+ref: b468f08a470a30d3368431b943818c0ab5a8d675
+containers:
+  - name: 'oom/readiness'
+    version: 'latest'
