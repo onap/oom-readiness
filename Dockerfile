@@ -5,5 +5,5 @@ ENV TOKEN="/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 COPY ready.py .
 
-ENTRYPOINT ["/usr/onap/ready.py"]
+ENTRYPOINT ["/app/ready.py"]
 CMD [""]
