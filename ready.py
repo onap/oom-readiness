@@ -56,8 +56,7 @@ configuration.ssl_ca_cert = cert
 configuration.api_key['authorization'] = token
 configuration.api_key_prefix['authorization'] = 'Bearer'
 coreV1Api = client.CoreV1Api(client.ApiClient(configuration))
-api_instance = client.ExtensionsV1beta1Api(client.ApiClient(configuration))
-api = client.AppsV1beta1Api(client.ApiClient(configuration))
+api = client.AppsV1(client.ApiClient(configuration))
 batchV1Api = client.BatchV1Api(client.ApiClient(configuration))
 
 
@@ -158,7 +157,7 @@ def wait_for_daemonset_complete(daemonset_name):
     """
     complete = False
     try:
-        response = api_instance.read_namespaced_daemon_set(
+        response = api.read_namespaced_daemon_set(
             daemonset_name, namespace)
         status = response.status
         if status.desired_number_scheduled == status.number_ready:
@@ -240,8 +239,8 @@ def get_deployment_name(replicaset):
     Returns:
         the name of the Deployment owning the ReplicatSet
     """
-    api_response = api_instance.read_namespaced_replica_set_status(replicaset,
-                                                                   namespace)
+    api_response = api.read_namespaced_replica_set_status(replicaset,
+                                                          namespace)
     deployment_name = read_name(api_response)
     return deployment_name
 
