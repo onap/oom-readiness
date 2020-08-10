@@ -56,7 +56,7 @@ configuration.ssl_ca_cert = cert
 configuration.api_key['authorization'] = token
 configuration.api_key_prefix['authorization'] = 'Bearer'
 coreV1Api = client.CoreV1Api(client.ApiClient(configuration))
-api = client.AppsV1(client.ApiClient(configuration))
+api = client.AppsV1Api(client.ApiClient(configuration))
 batchV1Api = client.BatchV1Api(client.ApiClient(configuration))
 
 
