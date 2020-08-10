@@ -30,7 +30,6 @@ import time
 import random
 
 from kubernetes import client
-from kubernetes.client.rest import ApiException
 
 # extract env variables.
 namespace = os.environ['NAMESPACE']
@@ -56,191 +55,117 @@ configuration.ssl_ca_cert = cert
 configuration.api_key['authorization'] = token
 configuration.api_key_prefix['authorization'] = 'Bearer'
 coreV1Api = client.CoreV1Api(client.ApiClient(configuration))
-api = client.AppsV1(client.ApiClient(configuration))
+api_instance = client.ExtensionsV1beta1Api(client.ApiClient(configuration))
+api = client.AppsV1beta1Api(client.ApiClient(configuration))
 batchV1Api = client.BatchV1Api(client.ApiClient(configuration))
 
 
 def is_job_complete(job_name):
-    """
-    Check if Job is complete.
-
-    Args:
-        job_name (str): the name of the Job.
-
-    Returns:
-        True if job is complete, false otherwise
-    """
     complete = False
-    log.info("Checking if %s is complete", job_name)
+    log.info("Checking if " + job_name + "  is complete")
     try:
         response = batchV1Api.read_namespaced_job_status(job_name, namespace)
         if response.status.succeeded == 1:
             job_status_type = response.status.conditions[0].type
             if job_status_type == "Complete":
                 complete = True
-                log.info("%s is complete", job_name)
+                log.info(job_name + " is complete")
             else:
-                log.info("%s is NOT complete", job_name)
+                log.info(job_name + " is not complete")
         else:
-            log.info("%s has not succeeded yet", job_name)
-    except ApiException as exc:
-        log.error("Exception when calling read_namespaced_job_status: %s\n",
-                  exc)
-    return complete
+            log.info(job_name + " has not succeeded yet")
+        return complete
+    except Exception as e:
+        log.error("Exception when calling read_namespaced_job_status: %s\n" % e)
 
 
 def wait_for_statefulset_complete(statefulset_name):
-    """
-    Check if StatefulSet is running.
-
-    Args:
-        statefulset_name (str): the name of the StatefulSet.
-
-    Returns:
-        True if StatefulSet is running, false otherwise
-    """
-    complete = False
     try:
-        response = api.read_namespaced_stateful_set(statefulset_name,
-                                                    namespace)
-        status = response.status
-        if (status.replicas == response.spec.replicas and
-                status.ready_replicas == response.spec.replicas and
-                status.observed_generation == response.metadata.generation):
-            log.info("Statefulset %s is ready", statefulset_name)
-            complete = True
+        response = api.read_namespaced_stateful_set(statefulset_name, namespace)
+        s = response.status
+        if (s.replicas == response.spec.replicas and
+                s.ready_replicas == response.spec.replicas and
+                s.observed_generation == response.metadata.generation):
+            log.info("Statefulset " + statefulset_name + "  is ready")
+            return True
         else:
-            log.info("Statefulset %s is NOT ready", statefulset_name)
-    except ApiException as exc:
-        log.error("Exception when waiting for Statefulset status: %s\n", exc)
-    return complete
+            log.info("Statefulset " + statefulset_name + "  is not ready")
+        return False
+    except Exception as e:
+        log.error("Exception when waiting for Statefulset status: %s\n" % e)
 
 
 def wait_for_deployment_complete(deployment_name):
-    """
-    Check if Deployment is running.
-
-    Args:
-        deployment_name (str): the name of the Deployment.
-
-    Returns:
-        True if Deployment is running, false otherwise
-    """
-    complete = False
     try:
         response = api.read_namespaced_deployment(deployment_name, namespace)
-        status = response.status
-        if (status.unavailable_replicas is None and
-                (status.updated_replicas is None or
-                 status.updated_replicas == response.spec.replicas) and
-                status.replicas == response.spec.replicas and
-                status.ready_replicas == response.spec.replicas and
-                status.observed_generation == response.metadata.generation):
-            log.info("Deployment %s is ready", deployment_name)
-            complete = True
+        s = response.status
+        if (s.unavailable_replicas is None and
+                ( s.updated_replicas is None or s.updated_replicas == response.spec.replicas ) and
+                s.replicas == response.spec.replicas and
+                s.ready_replicas == response.spec.replicas and
+                s.observed_generation == response.metadata.generation):
+            log.info("Deployment " + deployment_name + "  is ready")
+            return True
         else:
-            log.info("Deployment %s is NOT ready", deployment_name)
-    except ApiException as exc:
-        log.error("Exception when waiting for deployment status: %s\n", exc)
-    return complete
+            log.info("Deployment " + deployment_name + "  is not ready")
+        return False
+    except Exception as e:
+        log.error("Exception when waiting for deployment status: %s\n" % e)
 
 
 def wait_for_daemonset_complete(daemonset_name):
-    """
-    Check if DaemonSet is running.
-
-    Args:
-        daemonset_name (str): the name of the DaemonSet.
-
-    Returns:
-        True if DaemonSet is running, false otherwise
-    """
-    complete = False
     try:
-        response = api.read_namespaced_daemon_set(
-            daemonset_name, namespace)
-        status = response.status
-        if status.desired_number_scheduled == status.number_ready:
-            log.info("DaemonSet: %s/%s nodes ready --> %s is ready",
-                     status.number_ready, status.desired_number_scheduled,
-                     daemonset_name)
-            complete = True
+        response = api_instance.read_namespaced_daemon_set(daemonset_name, namespace)
+        s = response.status
+        if s.desired_number_scheduled == s.number_ready:
+            log.info("DaemonSet: " + str(s.number_ready) + "/" + str(s.desired_number_scheduled) + " nodes ready --> " + daemonset_name + " is ready")
+            return True
         else:
-            log.info("DaemonSet: %s/%s nodes ready --> %s is NOT ready",
-                     status.number_ready, status.desired_number_scheduled,
-                     daemonset_name)
-    except ApiException as exc:
-        log.error("Exception when waiting for DaemonSet status: %s\n", exc)
-    return complete
+            log.info("DaemonSet: " + str(s.number_ready) + "/" + str(s.desired_number_scheduled) + " nodes ready --> " + daemonset_name + " is not ready")
+            return False
+    except Exception as e:
+        log.error("Exception when waiting for DaemonSet status: %s\n" % e)
 
 
 def is_ready(container_name):
-    """
-    Check if a container is ready.
-
-    For a container owned by a Job, it means the Job is complete.
-    Otherwise, it means the parent (Deployment, StatefulSet, DaemonSet) is
-    running with the right number of replicas
-
-    Args:
-        container_name (str): the name of the container.
-
-    Returns:
-        True if container is ready, false otherwise
-    """
     ready = False
-    log.info("Checking if %s is ready", container_name)
+    log.info("Checking if " + container_name + "  is ready")
     try:
         response = coreV1Api.list_namespaced_pod(namespace=namespace,
                                                  watch=False)
-        for item in response.items:
+        for i in response.items:
             # container_statuses can be None, which is non-iterable.
-            if item.status.container_statuses is None:
+            if i.status.container_statuses is None:
                 continue
-            for container in item.status.container_statuses:
-                if container.name == container_name:
-                    name = read_name(item)
-                    if item.metadata.owner_references[0].kind == "StatefulSet":
+            for s in i.status.container_statuses:
+                if s.name == container_name:
+                    name = read_name(i)
+                    if i.metadata.owner_references[0].kind == "StatefulSet":
                         ready = wait_for_statefulset_complete(name)
-                    elif item.metadata.owner_references[0].kind == "ReplicaSet":
+                    elif i.metadata.owner_references[0].kind == "ReplicaSet":
                         deployment_name = get_deployment_name(name)
                         ready = wait_for_deployment_complete(deployment_name)
-                    elif item.metadata.owner_references[0].kind == "Job":
+                    elif i.metadata.owner_references[0].kind == "Job":
                         ready = is_job_complete(name)
-                    elif item.metadata.owner_references[0].kind == "DaemonSet":
-                        ready = wait_for_daemonset_complete(
-                            item.metadata.owner_references[0].name)
+                    elif i.metadata.owner_references[0].kind == "DaemonSet":
+                        ready = wait_for_daemonset_complete(i.metadata.owner_references[0].name)
+
                     return ready
-    except ApiException as exc:
-        log.error("Exception when calling list_namespaced_pod: %s\n", exc)
-    return ready
+
+                else:
+                    continue
+        return ready
+    except Exception as e:
+        log.error("Exception when calling list_namespaced_pod: %s\n" % e)
 
 
 def read_name(item):
-    """
-    Return the name of the owner's item.
-
-    Args:
-        item (str): the item.
-
-    Returns:
-        the name of first owner's item
-    """
     return item.metadata.owner_references[0].name
 
 
 def get_deployment_name(replicaset):
-    """
-    Return the name of the Deployment owning the ReplicatSet.
-
-    Args:
-        replicaset (str): the ReplicatSet.
-
-    Returns:
-        the name of the Deployment owning the ReplicatSet
-    """
-    api_response = api.read_namespaced_replica_set_status(replicaset,
-                                                          namespace)
+    api_response = api_instance.read_namespaced_replica_set_status(replicaset,
+                                                                   namespace)
     deployment_name = read_name(api_response)
     return deployment_name
 
@@ -256,31 +181,25 @@ USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> " \
 
 
 def main(argv):
-    """
-    Checks if a container is ready or if a job is finished.
-    The check is done according to the name of the container, not the name of
-    its parent (Job, Deployment, StatefulSet, DaemonSet).
-
-    Args:
-        argv: the command line
-    """
     # args are a list of container names
     container_names = []
     timeout = DEF_TIMEOUT
     try:
-        opts, _args = getopt.getopt(argv, "hc:t:", ["container-name=",
-                                                    "timeout=",
-                                                    "help"])
+        opts, args = getopt.getopt(argv, "hc:t:", ["container-name=",
+                                                   "timeout=",
+                                                   "help"])
         for opt, arg in opts:
             if opt in ("-h", "--help"):
-                print("{}\n\n{}".format(DESCRIPTION, USAGE))
+                print("%s\n\n%s" % (DESCRIPTION, USAGE))
                 sys.exit()
             elif opt in ("-c", "--container-name"):
                 container_names.append(arg)
+            elif opt in ("-j", "--job-name"):
+                job_names.append(arg)
             elif opt in ("-t", "--timeout"):
                 timeout = float(arg)
-    except (getopt.GetoptError, ValueError) as exc:
-        print("Error parsing input parameters: {}\n".format(exc))
+    except (getopt.GetoptError, ValueError) as e:
+        print("Error parsing input parameters: %s\n" % e)
         print(USAGE)
         sys.exit(2)
     if container_names.__len__() == 0:
@@ -294,15 +213,30 @@ def main(argv):
             ready = is_ready(container_name)
             if ready is True:
                 break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            container_name)
-                sys.exit(1)
+            elif time.time() > timeout:
+                log.warning("timed out waiting for '" + container_name +
+                            "' to be ready")
+                exit(1)
             else:
                 # spread in time potentially parallel execution in multiple
                 # containers
                 time.sleep(random.randint(5, 11))
 
+    for job_name in job_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            complete = is_job_complete(job_name)
+            if complete is True:
+                break
+            elif time.time() > timeout:
+                log.warning("timed out waiting for '" + job_name +
+                            "' to be completed")
+                exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
