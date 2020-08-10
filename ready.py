@@ -247,12 +247,13 @@ def get_deployment_name(replicaset):
 
 DEF_TIMEOUT = 10
 DESCRIPTION = "Kubernetes container readiness check utility"
-USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> " \
-        "[-c <container_name> ...]\n" \
+USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> | -j <job_name> " \
+        "[-c <container_name> ...] [-j <job_name> ...] \n" \
         "where\n" \
         "<timeout> - wait for container readiness timeout in min, " \
         "default is " + str(DEF_TIMEOUT) + "\n" \
         "<container_name> - name of the container to wait for\n"
+        "<job_name> - name of the job to wait for\n"
 
 
 def main(argv):
@@ -266,9 +267,10 @@ def main(argv):
     """
     # args are a list of container names
     container_names = []
+    job_names = []
     timeout = DEF_TIMEOUT
     try:
-        opts, _args = getopt.getopt(argv, "hc:t:", ["container-name=",
+        opts, _args = getopt.getopt(argv, "hjc:t:", ["container-name=",
                                                     "timeout=",
                                                     "help"])
         for opt, arg in opts:
@@ -277,6 +279,8 @@ def main(argv):
                 sys.exit()
             elif opt in ("-c", "--container-name"):
                 container_names.append(arg)
+            elif opt in ("-j", "--job-name"):
+                job_names.append(arg)
             elif opt in ("-t", "--timeout"):
                 timeout = float(arg)
     except (getopt.GetoptError, ValueError) as exc:
@@ -303,6 +307,20 @@ def main(argv):
                 # containers
                 time.sleep(random.randint(5, 11))
 
+    for job_name in job_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_job_complete(job_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            job_name)
+                sys.exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
 
 if __name__ == "__main__":
     main(sys.argv[1:])
