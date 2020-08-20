@@ -1,0 +1,9 @@
+Verified+1: ONAP Jobbuilder <onap-jobbuilder@jenkins.onap.org>
+Code-Review+1: Krzysztof Kuzmicki <krzysztof.kuzmicki@nokia.com>
+Code-Review+1: Damian Nowak <damian.nowak@nokia.com>
+Code-Review+2: Krzysztof Opasiak <k.opasiak@samsung.com>
+Submitted-by: Krzysztof Opasiak <k.opasiak@samsung.com>
+Submitted-at: Thu, 20 Aug 2020 17:28:46 +0000
+Reviewed-on: https://gerrit.onap.org/r/c/oom/readiness/+/111428
+Project: oom/readiness
+Branch: refs/heads/master
