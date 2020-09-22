@@ -2,4 +2,3 @@
 #
 331264bc50c5db2d497e941ee8688d69f3c794a3                                      	saml/onap-gerrit-oom-readiness-committers
 daebbf523be390041a1a9c0e340a6d833aae5043                                      	GitHub Replication
-ldap:cn=onap-gerrit-oom-readiness-committers,ou=Groups,dc=freestandards,dc=org	ldap/onap-gerrit-oom-readiness-committers
