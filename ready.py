@@ -216,6 +216,40 @@ def is_ready(container_name):
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
 
+def service_mesh_job_check(container_name):
+    """
+    Check if a Job's primary container is complete. Used for ensuring the sidecar can be killed after Job completion.
+    Args:
+        container_name (str): the name of the Job's primary container.
+
+    Returns:
+         True if job's container is in the completed state, false otherwise
+    """
+    complete = False
+    log.info("Checking if %s is complete", container_name)
+    try:
+        response = coreV1Api.list_namespaced_pod(namespace=namespace, watch=False)
+        for item in response.items:
+            # container_statuses can be None, which is non-iterable.
+            if item.status.container_statuses is None:
+                continue
+            for container in item.status.container_statuses:
+                if container.name == container_name:
+                    name = read_name(item)
+                    log.info("Container Details  %s ", container)
+                    log.info("Container Status  %s ", container.state.terminated)
+                    if container.state.terminated is None:
+                        continue
+                    log.info("Container Status Reason  %s ", container.state.terminated.reason)
+                    if container.state.terminated.reason == 'Completed':
+                        complete = True
+                        log.info("%s is complete", container_name)
+                    else:
+                        log.info("%s is NOT complete", container_name)
+    except ApiException as exc:
+        log.error("Exception when calling read_namespaced_job_status: %s\n",
+                  exc)
+    return complete
 
 def read_name(item):
     """
@@ -245,8 +279,22 @@ def get_deployment_name(replicaset):
     deployment_name = read_name(api_response)
     return deployment_name
 
+def quitquitquit_post(apiurl):
+    URL = apiurl
+    response = requests.post(url = URL)
+    responseStatus = response.ok
+    try:
+        if responseStatus is True:
+            log.info("quitquitquit returned True")
+            return True
+        else:
+            log.info("quitquitquit returned False")
+            return False
+    except:
+        log.info("quitquitquit call failed with exception")
 
 DEF_TIMEOUT = 10
+DEF_URL = "http://127.0.0.1:15020/quitquitquit"
 DESCRIPTION = "Kubernetes container readiness check utility"
 USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .. \n" \
         "where\n" \
@@ -258,7 +306,7 @@ USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .
 
 def main(argv):
     """
-    Checks if a container is ready or if a job is finished.
+    Checks if a container is ready, if a job is finished or if the main container of a job has completed.
     The check is done according to the name of the container, not the name of
     its parent (Job, Deployment, StatefulSet, DaemonSet).
 
@@ -268,10 +316,14 @@ def main(argv):
     # args are a list of container names
     container_names = []
     job_names = []
+    service_mesh_job_container_names = []
     timeout = DEF_TIMEOUT
+    url = DEF_URL
     try:
-        opts, _args = getopt.getopt(argv, "hj:c:t:", ["container-name=",
+        opts, _args = getopt.getopt(argv, "hj:c:t:s:u:", ["container-name=",
                                                     "timeout=",
+                                                    "service-mesh-check=",
+                                                    "url=",
                                                     "job-name=",
                                                     "help"])
         for opt, arg in opts:
@@ -282,13 +334,17 @@ def main(argv):
                 container_names.append(arg)
             elif opt in ("-j", "--job-name"):
                 job_names.append(arg)
+            elif opt in ("-s", "--service-mesh-check"):
+                service_mesh_job_container_names.append(arg)
+            elif opt in ("-u", "--url"):
+                url = arg
             elif opt in ("-t", "--timeout"):
                 timeout = float(arg)
     except (getopt.GetoptError, ValueError) as exc:
         print("Error parsing input parameters: {}\n".format(exc))
         print(USAGE)
         sys.exit(2)
-    if container_names.__len__() == 0 and job_names.__len__() == 0:
+    if container_names.__len__() == 0 and job_names.__len__() == 0 and service_mesh_job_container_names.__len__() == 0:
         print("Missing required input parameter(s)\n")
         print(USAGE)
         sys.exit(2)
@@ -312,6 +368,25 @@ def main(argv):
         while True:
             ready = is_job_complete(job_name)
             if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            job_name)
+                sys.exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
+    for service_mesh_job_container_name in service_mesh_job_container_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = service_mesh_job_check(service_mesh_job_container_name)
+            if ready is True:
+                sideCarKilled = quitquitquit_post(url)
+                if sideCarKilled is True:
+                    log.info("Side Car Killed through QuitQuitQuit API")
+                else:
+                    log.info("Side Car Failed to be Killed through QuitQuitQuit API")
                 break
             if time.time() > timeout:
                 log.warning("timed out waiting for '%s' to be ready",
