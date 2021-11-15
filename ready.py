@@ -30,17 +30,11 @@ import sys
 import time
 import random
 
-from kubernetes import client
+from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
-# extract env variables.
+# extract ns from env variable
 namespace = os.environ['NAMESPACE']
-cert = os.environ['CERT']
-host = os.environ['KUBERNETES_SERVICE_HOST']
-token_path = os.environ['TOKEN']
-
-with open(token_path, 'r') as token_file:
-    token = token_file.read().replace('\n', '')
 
 # setup logging
 log = logging.getLogger(__name__)
@@ -51,15 +45,10 @@ handler.setLevel(logging.INFO)
 log.addHandler(handler)
 log.setLevel(logging.INFO)
 
-configuration = client.Configuration()
-configuration.host = "https://" + host
-configuration.ssl_ca_cert = cert
-configuration.api_key['authorization'] = token
-configuration.api_key_prefix['authorization'] = 'Bearer'
-coreV1Api = client.CoreV1Api(client.ApiClient(configuration))
-api = client.AppsV1Api(client.ApiClient(configuration))
-batchV1Api = client.BatchV1Api(client.ApiClient(configuration))
-
+config.load_incluster_config()
+coreV1Api = client.CoreV1Api()
+api = client.AppsV1Api()
+batchV1Api = client.BatchV1Api()
 
 def is_job_complete(job_name):
     """
