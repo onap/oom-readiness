@@ -29,6 +29,7 @@ import os
 import sys
 import time
 import random
+import requests
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
