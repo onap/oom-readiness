@@ -224,7 +224,7 @@ def service_mesh_job_check(container_name):
             if item.status.container_statuses is None:
                 continue
             for container in item.status.container_statuses:
-                if container.name == container_name:
+                if container.name == container_name and item.status.phase == "Running":
                     name = read_name(item)
                     log.info("Container Details  %s ", container)
                     log.info("Container Status  %s ", container.state.terminated)
