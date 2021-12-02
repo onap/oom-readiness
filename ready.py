@@ -228,14 +228,11 @@ def service_mesh_job_check(container_name):
                     name = read_name(item)
                     log.info("Container Details  %s ", container)
                     log.info("Container Status  %s ", container.state.terminated)
-                    if container.state.terminated is None:
-                        continue
-                    log.info("Container Status Reason  %s ", container.state.terminated.reason)
-                    if container.state.terminated.reason == 'Completed':
-                        complete = True
-                        log.info("%s is complete", container_name)
-                    else:
-                        log.info("%s is NOT complete", container_name)
+
+                    if container.state.terminated:
+                      log.info("Container Terminated with reason  %s ", container.state.terminated.reason)
+                      complete = True
+
     except ApiException as exc:
         log.error("Exception when calling read_namespaced_job_status: %s\n",
                   exc)
@@ -380,7 +377,7 @@ def main(argv):
                 break
             if time.time() > timeout:
                 log.warning("timed out waiting for '%s' to be ready",
-                            job_name)
+                            service_mesh_job_container_name)
                 sys.exit(1)
             else:
                 # spread in time potentially parallel execution in multiple
