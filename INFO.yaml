@@ -46,6 +46,15 @@ committers:
       company: 'Samsung'
       id: 'kopasiak'
       timezone: 'Poland/Warsaw'
+    - name: 'Jack Lucas'
+      email: 'jflos@sonoris.net'
+      company: 'Individual'
+      id: 'jackl'
+      timezone: 'USA/EST'
 tsc:
     approval: 'https://lists.onap.org/pipermail/onap-tsc'
     changes:
+        - type: 'Addition'
+          name: 'Jack Lucas'
+          # yamllint disable-line rule:line-length
+          link: 'https://wiki.onap.org/display/DW/Committer+Promotion+for+%5BOOM%5D+%3A+Jack+Lucas'
