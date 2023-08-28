@@ -30,6 +30,8 @@ import sys
 import time
 import random
 import requests
+import socket
+from contextlib import closing
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -46,7 +48,9 @@ handler.setLevel(logging.INFO)
 log.addHandler(handler)
 log.setLevel(logging.INFO)
 
-config.load_incluster_config()
+#config.load_incluster_config()
+# use for local testing:
+config.load_kube_config()
 coreV1Api = client.CoreV1Api()
 api = client.AppsV1Api()
 batchV1Api = client.BatchV1Api()
@@ -206,6 +210,80 @@ def is_ready(container_name):
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
 
+def is_pod_ready(pod_name):
+    """
+    Check if a pod is ready.
+
+    For a pod owned by a Job, it means the Job is complete.
+    Otherwise, it means the parent (Deployment, StatefulSet, DaemonSet) is
+    running with the right number of replicas
+
+    Args:
+        pod_name (str): the name of the pod.
+
+    Returns:
+        True if pod is ready, false otherwise
+    """
+    ready = False
+    log.info("Checking if %s is ready", pod_name)
+    try:
+        response = coreV1Api.list_namespaced_pod(namespace=namespace,
+                                                 watch=False)
+        for item in response.items:
+          if (item.metadata.name.startswith(pod_name)):
+            name = read_name(item)
+            if item.metadata.owner_references[0].kind == "StatefulSet":
+                ready = wait_for_statefulset_complete(name)
+            elif item.metadata.owner_references[0].kind == "ReplicaSet":
+                deployment_name = get_deployment_name(name)
+                ready = wait_for_deployment_complete(deployment_name)
+            elif item.metadata.owner_references[0].kind == "Job":
+                ready = is_job_complete(name)
+            elif item.metadata.owner_references[0].kind == "DaemonSet":
+                ready = wait_for_daemonset_complete(
+                   item.metadata.owner_references[0].name)
+            return ready
+    except ApiException as exc:
+        log.error("Exception when calling list_namespaced_pod: %s\n", exc)
+    return ready
+
+def is_app_ready(app_name):
+    """
+    Check if a pod with app-label is ready.
+
+    For a pod owned by a Job, it means the Job is complete.
+    Otherwise, it means the parent (Deployment, StatefulSet, DaemonSet) is
+    running with the right number of replicas
+
+    Args:
+        app_name (str): the app label of the pod.
+
+    Returns:
+        True if pod is ready, false otherwise
+    """
+    ready = False
+    log.info("Checking if pod with app-label %s is ready", app_name)
+    try:
+        response = coreV1Api.list_namespaced_pod(namespace=namespace,
+                                                 watch=False)
+        for item in response.items:
+          if item.metadata.labels.get('app', "NOKEY") == app_name:
+            name = read_name(item)
+            if item.metadata.owner_references[0].kind == "StatefulSet":
+                ready = wait_for_statefulset_complete(name)
+            elif item.metadata.owner_references[0].kind == "ReplicaSet":
+                deployment_name = get_deployment_name(name)
+                ready = wait_for_deployment_complete(deployment_name)
+            elif item.metadata.owner_references[0].kind == "Job":
+                ready = is_job_complete(name)
+            elif item.metadata.owner_references[0].kind == "DaemonSet":
+                ready = wait_for_daemonset_complete(
+                   item.metadata.owner_references[0].name)
+            return ready
+    except ApiException as exc:
+        log.error("Exception when calling list_namespaced_pod: %s\n", exc)
+    return ready
+
 def service_mesh_job_check(container_name):
     """
     Check if a Job's primary container is complete. Used for ensuring the sidecar can be killed after Job completion.
@@ -265,9 +343,21 @@ def get_deployment_name(replicaset):
                                                           namespace)
     deployment_name = read_name(api_response)
     return deployment_name
+   
+def check_socket(host, port):
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        if sock.connect_ex((host, port)) == 0:
+            print("Port is open")
+            return True
+        else:
+            print("Port is not open")
+            return False
 
 def quitquitquit_post(apiurl):
     URL = apiurl
+    if check_socket("127.0.0.1", 15020) is False:
+        log.info("no sidecar exists, exiting")
+        return True
     response = requests.post(url = URL)
     responseStatus = response.ok
     try:
@@ -283,31 +373,39 @@ def quitquitquit_post(apiurl):
 DEF_TIMEOUT = 10
 DEF_URL = "http://127.0.0.1:15020/quitquitquit"
 DESCRIPTION = "Kubernetes container readiness check utility"
-USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .. \n" \
+USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .. " \
+        "| -p <pod_name> .. | -a <app_name> .. \n" \
         "where\n" \
         "<timeout> - wait for container readiness timeout in min, " \
         "default is " + str(DEF_TIMEOUT) + "\n" \
         "<container_name> - name of the container to wait for\n" \
+        "<pod_name> - name of the pod to wait for\n" \
+        "<app_name> - app label of the pod to wait for\n" \
         "<job_name> - name of the job to wait for\n"
 
 
 def main(argv):
     """
-    Checks if a container is ready, if a job is finished or if the main container of a job has completed.
-    The check is done according to the name of the container, not the name of
-    its parent (Job, Deployment, StatefulSet, DaemonSet).
+    Checks if a container or pod is ready, 
+    if a job is finished or if the main container of a job has completed.
+    The check is done according to the name of the container op pod,
+    not the name of its parent (Job, Deployment, StatefulSet, DaemonSet).
 
     Args:
         argv: the command line
     """
     # args are a list of container names
     container_names = []
+    pod_names = []
+    app_names = []
     job_names = []
     service_mesh_job_container_names = []
     timeout = DEF_TIMEOUT
     url = DEF_URL
     try:
-        opts, _args = getopt.getopt(argv, "hj:c:t:s:u:", ["container-name=",
+        opts, _args = getopt.getopt(argv, "hj:c:p:a:t:s:u:", ["container-name=",
+                                                    "pod-name",
+                                                    "app-name",
                                                     "timeout=",
                                                     "service-mesh-check=",
                                                     "url=",
@@ -319,6 +417,10 @@ def main(argv):
                 sys.exit()
             elif opt in ("-c", "--container-name"):
                 container_names.append(arg)
+            elif opt in ("-p", "--pod-name"):
+                pod_names.append(arg)
+            elif opt in ("-a", "--app-name"):
+                app_names.append(arg)
             elif opt in ("-j", "--job-name"):
                 job_names.append(arg)
             elif opt in ("-s", "--service-mesh-check"):
@@ -331,7 +433,8 @@ def main(argv):
         print("Error parsing input parameters: {}\n".format(exc))
         print(USAGE)
         sys.exit(2)
-    if container_names.__len__() == 0 and job_names.__len__() == 0 and service_mesh_job_container_names.__len__() == 0:
+    if container_names.__len__() == 0 and job_names.__len__() == 0 and pod_names.__len__() == 0 \
+       and app_names.__len__() == 0 and service_mesh_job_container_names.__len__() == 0:
         print("Missing required input parameter(s)\n")
         print(USAGE)
         sys.exit(2)
@@ -345,6 +448,34 @@ def main(argv):
             if time.time() > timeout:
                 log.warning("timed out waiting for '%s' to be ready",
                             container_name)
+                sys.exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
+    for pod_name in pod_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_pod_ready(pod_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            pod_name)
+                sys.exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
+    for app_name in app_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_app_ready(app_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            pod_name)
                 sys.exit(1)
             else:
                 # spread in time potentially parallel execution in multiple
