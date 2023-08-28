@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "91ab35da_75e1e4e8",
+        "filename": "ready.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 376,
+      "author": {
+        "id": 511
+      },
+      "writtenOn": "2023-08-28T13:22:12Z",
+      "side": 1,
+      "message": "This could also show the -p and -a options.",
+      "revId": "f72420397453c053c05043302aabf65c4545c50d",
+      "serverId": "14b4e41f-c4e3-4fb9-9955-6a9b5656895a"
+    }
+  ]
+}
