@@ -343,7 +343,7 @@ def get_deployment_name(replicaset):
                                                           namespace)
     deployment_name = read_name(api_response)
     return deployment_name
-   
+
 def check_socket(host, port):
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         if sock.connect_ex((host, port)) == 0:
@@ -404,8 +404,8 @@ def main(argv):
     url = DEF_URL
     try:
         opts, _args = getopt.getopt(argv, "hj:c:p:a:t:s:u:", ["container-name=",
-                                                    "pod-name",
-                                                    "app-name",
+                                                    "pod-name=",
+                                                    "app-name=",
                                                     "timeout=",
                                                     "service-mesh-check=",
                                                     "url=",
