@@ -475,7 +475,7 @@ def main(argv):
                 break
             if time.time() > timeout:
                 log.warning("timed out waiting for '%s' to be ready",
-                            pod_name)
+                            app_name)
                 sys.exit(1)
             else:
                 # spread in time potentially parallel execution in multiple
