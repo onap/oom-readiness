@@ -36,8 +36,7 @@ from contextlib import closing
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
-# extract ns from env variable
-namespace = os.environ['NAMESPACE']
+namespace = ""
 
 # setup logging
 log = logging.getLogger(__name__)
@@ -66,7 +65,7 @@ def is_job_complete(job_name):
         True if job is complete, false otherwise
     """
     complete = False
-    log.info("Checking if %s is complete", job_name)
+    log.info("Checking if job %s is complete", job_name)
     try:
         response = batchV1Api.read_namespaced_job_status(job_name, namespace)
         if response.status.succeeded == 1:
@@ -184,7 +183,7 @@ def is_ready(container_name):
         True if container is ready, false otherwise
     """
     ready = False
-    log.info("Checking if %s is ready", container_name)
+    log.info("Checking if container %s is ready", container_name)
     try:
         response = coreV1Api.list_namespaced_pod(namespace=namespace,
                                                  watch=False)
@@ -210,6 +209,57 @@ def is_ready(container_name):
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
 
+def is_service_ready(service_name):
+    """
+    Check if a service is ready.
+
+    The service is ready, if the selected pod is finally deployed.
+    It means the parent (Deployment, StatefulSet, DaemonSet) is
+    running with the right number of replicas
+
+    Args:
+        service_name (str): the name of the service.
+
+    Returns:
+        True if service is ready, false otherwise
+    """
+    ready = False
+    log.info("Checking if service %s is ready", service_name)
+    try:
+      services = coreV1Api.list_namespaced_service(namespace=namespace,
+                                                   watch=False)
+      for svc in services.items:
+        if (svc.metadata.name.startswith(service_name)):
+          if svc.spec.selector:
+            # convert the selector dictionary into a string selector
+            # for example: {"app":"redis"} => "app=redis"
+            selector = ''
+            for k,v in svc.spec.selector.items():
+              selector += k + '=' + v + ','
+            selector = selector[:-1]
+            log.info("Selector %s", selector)
+            # Get the pods that match the selector
+            pods = coreV1Api.list_namespaced_pod(namespace=namespace,
+                                                 label_selector=selector,
+                                                 watch=False)
+            for item in pods.items:
+              name = read_name(item)
+              log.info("Found pod %s selected by service %s", name, service_name)
+              if item.metadata.owner_references[0].kind == "StatefulSet":
+                  ready = wait_for_statefulset_complete(name)
+              elif item.metadata.owner_references[0].kind == "ReplicaSet":
+                  deployment_name = get_deployment_name(name)
+                  ready = wait_for_deployment_complete(deployment_name)
+              elif item.metadata.owner_references[0].kind == "Job":
+                  ready = is_job_complete(name)
+              elif item.metadata.owner_references[0].kind == "DaemonSet":
+                  ready = wait_for_daemonset_complete(
+                     item.metadata.owner_references[0].name)
+              return ready
+    except ApiException as exc:
+        log.error("Exception when calling list_namespaced_service: %s\n", exc)
+    return ready
+
 def is_pod_ready(pod_name):
     """
     Check if a pod is ready.
@@ -225,13 +275,14 @@ def is_pod_ready(pod_name):
         True if pod is ready, false otherwise
     """
     ready = False
-    log.info("Checking if %s is ready", pod_name)
+    log.info("Checking if pod %s is ready", pod_name)
     try:
         response = coreV1Api.list_namespaced_pod(namespace=namespace,
                                                  watch=False)
         for item in response.items:
           if (item.metadata.name.startswith(pod_name)):
             name = read_name(item)
+            log.info("Found pod %s", name)
             if item.metadata.owner_references[0].kind == "StatefulSet":
                 ready = wait_for_statefulset_complete(name)
             elif item.metadata.owner_references[0].kind == "ReplicaSet":
@@ -269,6 +320,7 @@ def is_app_ready(app_name):
         for item in response.items:
           if item.metadata.labels.get('app', "NOKEY") == app_name:
             name = read_name(item)
+            log.info("Found pod %s", name)
             if item.metadata.owner_references[0].kind == "StatefulSet":
                 ready = wait_for_statefulset_complete(name)
             elif item.metadata.owner_references[0].kind == "ReplicaSet":
@@ -294,7 +346,7 @@ def service_mesh_job_check(container_name):
          True if job's container is in the completed state, false otherwise
     """
     complete = False
-    log.info("Checking if %s is complete", container_name)
+    log.info("Checking if container %s is complete", container_name)
     try:
         response = coreV1Api.list_namespaced_pod(namespace=namespace, watch=False)
         for item in response.items:
@@ -373,11 +425,14 @@ def quitquitquit_post(apiurl):
 DEF_TIMEOUT = 10
 DEF_URL = "http://127.0.0.1:15020/quitquitquit"
 DESCRIPTION = "Kubernetes container readiness check utility"
-USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .. " \
-        "| -p <pod_name> .. | -a <app_name> .. \n" \
+USAGE = "Usage: ready.py [-t <timeout>] [-n <namespace>] -c <container_name> .. \n" \
+        "| -s <service_name> .. | -p <pod_name> .. | -a <app_name> .. \n" \
+        "| -j <job_name> .. \n" \
         "where\n" \
         "<timeout> - wait for container readiness timeout in min, " \
+        "<namespace> - K8S namespace the check is done" \
         "default is " + str(DEF_TIMEOUT) + "\n" \
+        "<service_name> - name of the service to wait for\n" \
         "<container_name> - name of the container to wait for\n" \
         "<pod_name> - name of the pod to wait for\n" \
         "<app_name> - app label of the pod to wait for\n" \
@@ -386,7 +441,7 @@ USAGE = "Usage: ready.py [-t <timeout>] -c <container_name> .. | -j <job_name> .
 
 def main(argv):
     """
-    Checks if a container or pod is ready, 
+    Checks if a container, pod or service is ready, 
     if a job is finished or if the main container of a job has completed.
     The check is done according to the name of the container op pod,
     not the name of its parent (Job, Deployment, StatefulSet, DaemonSet).
@@ -394,27 +449,34 @@ def main(argv):
     Args:
         argv: the command line
     """
+    global namespace
     # args are a list of container names
     container_names = []
+    service_names = []
     pod_names = []
     app_names = []
     job_names = []
     service_mesh_job_container_names = []
     timeout = DEF_TIMEOUT
     url = DEF_URL
+    ns = ""
     try:
-        opts, _args = getopt.getopt(argv, "hj:c:p:a:t:s:u:", ["container-name=",
+        opts, _args = getopt.getopt(argv, "hj:s:c:p:a:t:m:u:n:", ["service-name",
+                                                    "container-name=",
                                                     "pod-name=",
                                                     "app-name=",
                                                     "timeout=",
                                                     "service-mesh-check=",
                                                     "url=",
                                                     "job-name=",
+                                                    "namespace="
                                                     "help"])
         for opt, arg in opts:
             if opt in ("-h", "--help"):
                 print("{}\n\n{}".format(DESCRIPTION, USAGE))
                 sys.exit()
+            elif opt in ("-s", "--service-name"):
+                service_names.append(arg)
             elif opt in ("-c", "--container-name"):
                 container_names.append(arg)
             elif opt in ("-p", "--pod-name"):
@@ -423,10 +485,12 @@ def main(argv):
                 app_names.append(arg)
             elif opt in ("-j", "--job-name"):
                 job_names.append(arg)
-            elif opt in ("-s", "--service-mesh-check"):
+            elif opt in ("-m", "--service-mesh-check"):
                 service_mesh_job_container_names.append(arg)
             elif opt in ("-u", "--url"):
                 url = arg
+            elif opt in ("-n", "--namespace"):
+                ns = arg
             elif opt in ("-t", "--timeout"):
                 timeout = float(arg)
     except (getopt.GetoptError, ValueError) as exc:
@@ -434,11 +498,31 @@ def main(argv):
         print(USAGE)
         sys.exit(2)
     if container_names.__len__() == 0 and job_names.__len__() == 0 and pod_names.__len__() == 0 \
-       and app_names.__len__() == 0 and service_mesh_job_container_names.__len__() == 0:
+       and app_names.__len__() == 0 and service_mesh_job_container_names.__len__() == 0 \
+       and service_names.__len__() == 0:
         print("Missing required input parameter(s)\n")
         print(USAGE)
         sys.exit(2)
+    if ns == "":
+        # extract ns from env variable
+        namespace = os.environ['NAMESPACE']
+    else:
+        namespace = ns
 
+    for service_name in service_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_service_ready(service_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            service_name)
+                sys.exit(1)
+            else:
+                # spread in time potentially parallel execution in multiple
+                # containers
+                time.sleep(random.randint(5, 11))
     for container_name in container_names:
         timeout = time.time() + timeout * 60
         while True:
