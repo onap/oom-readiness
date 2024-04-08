@@ -237,7 +237,7 @@ def is_service_ready(service_name):
             for k,v in svc.spec.selector.items():
               selector += k + '=' + v + ','
             selector = selector[:-1]
-            log.info("Selector %s", selector)
+            log.info("Found Selector %s", selector)
             # Get the pods that match the selector
             pods = coreV1Api.list_namespaced_pod(namespace=namespace,
                                                  label_selector=selector,
@@ -245,17 +245,19 @@ def is_service_ready(service_name):
             for item in pods.items:
               name = read_name(item)
               log.info("Found pod %s selected by service %s", name, service_name)
-              if item.metadata.owner_references[0].kind == "StatefulSet":
-                  ready = wait_for_statefulset_complete(name)
-              elif item.metadata.owner_references[0].kind == "ReplicaSet":
-                  deployment_name = get_deployment_name(name)
-                  ready = wait_for_deployment_complete(deployment_name)
-              elif item.metadata.owner_references[0].kind == "Job":
-                  ready = is_job_complete(name)
-              elif item.metadata.owner_references[0].kind == "DaemonSet":
-                  ready = wait_for_daemonset_complete(
-                     item.metadata.owner_references[0].name)
-              return ready
+              return is_pod_ready (name)
+          else:
+            log.info("No Selector found, check Endpoints")
+            endpoints = coreV1Api.list_namespaced_endpoints(namespace=namespace,
+                                                   watch=False)
+            for ep in endpoints.items:
+              if (ep.metadata.name.startswith(service_name)):
+                if ep.subsets:
+                  addresses = ep.subsets[0].addresses
+                  if addresses:
+                    name = addresses[0].target_ref.name
+                    log.info("Found pod %s selected by service %s", name, service_name)
+                    return is_pod_ready (name)
     except ApiException as exc:
         log.error("Exception when calling list_namespaced_service: %s\n", exc)
     return ready
@@ -321,17 +323,7 @@ def is_app_ready(app_name):
           if item.metadata.labels.get('app', "NOKEY") == app_name:
             name = read_name(item)
             log.info("Found pod %s", name)
-            if item.metadata.owner_references[0].kind == "StatefulSet":
-                ready = wait_for_statefulset_complete(name)
-            elif item.metadata.owner_references[0].kind == "ReplicaSet":
-                deployment_name = get_deployment_name(name)
-                ready = wait_for_deployment_complete(deployment_name)
-            elif item.metadata.owner_references[0].kind == "Job":
-                ready = is_job_complete(name)
-            elif item.metadata.owner_references[0].kind == "DaemonSet":
-                ready = wait_for_daemonset_complete(
-                   item.metadata.owner_references[0].name)
-            return ready
+            return is_pod_ready (name)
     except ApiException as exc:
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
