@@ -433,7 +433,7 @@ USAGE = "Usage: ready.py [-t <timeout>] [-n <namespace>] -c <container_name> .. 
 
 def main(argv):
     """
-    Checks if a container, pod or service is ready, 
+    Checks if a container, pod or service is ready,
     if a job is finished or if the main container of a job has completed.
     The check is done according to the name of the container op pod,
     not the name of its parent (Job, Deployment, StatefulSet, DaemonSet).
@@ -452,8 +452,9 @@ def main(argv):
     timeout = DEF_TIMEOUT
     url = DEF_URL
     ns = ""
+    interval=None
     try:
-        opts, _args = getopt.getopt(argv, "hj:s:c:p:a:t:m:u:n:", ["service-name=",
+        opts, _args = getopt.getopt(argv, "hj:s:c:p:a:t:m:u:n:i:", ["service-name=",
                                                     "container-name=",
                                                     "pod-name=",
                                                     "app-name=",
@@ -461,7 +462,8 @@ def main(argv):
                                                     "service-mesh-check=",
                                                     "url=",
                                                     "job-name=",
-                                                    "namespace="
+                                                    "namespace=",
+                                                    "interval="
                                                     "help"])
         for opt, arg in opts:
             if opt in ("-h", "--help"):
@@ -485,6 +487,8 @@ def main(argv):
                 ns = arg
             elif opt in ("-t", "--timeout"):
                 timeout = float(arg)
+            elif opt in ("-i", "--interval"):
+                timeout = int(arg)
     except (getopt.GetoptError, ValueError) as exc:
         print("Error parsing input parameters: {}\n".format(exc))
         print(USAGE)
@@ -501,76 +505,14 @@ def main(argv):
     else:
         namespace = ns
 
-    for service_name in service_names:
-        timeout = time.time() + timeout * 60
-        while True:
-            ready = is_service_ready(service_name)
-            if ready is True:
-                break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            service_name)
-                sys.exit(1)
-            else:
-                # spread in time potentially parallel execution in multiple
-                # containers
-                time.sleep(random.randint(5, 11))
-    for container_name in container_names:
-        timeout = time.time() + timeout * 60
-        while True:
-            ready = is_ready(container_name)
-            if ready is True:
-                break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            container_name)
-                sys.exit(1)
-            else:
-                # spread in time potentially parallel execution in multiple
-                # containers
-                time.sleep(random.randint(5, 11))
-    for pod_name in pod_names:
-        timeout = time.time() + timeout * 60
-        while True:
-            ready = is_pod_ready(pod_name)
-            if ready is True:
-                break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            pod_name)
-                sys.exit(1)
-            else:
-                # spread in time potentially parallel execution in multiple
-                # containers
-                time.sleep(random.randint(5, 11))
-    for app_name in app_names:
-        timeout = time.time() + timeout * 60
-        while True:
-            ready = is_app_ready(app_name)
-            if ready is True:
-                break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            app_name)
-                sys.exit(1)
-            else:
-                # spread in time potentially parallel execution in multiple
-                # containers
-                time.sleep(random.randint(5, 11))
-    for job_name in job_names:
-        timeout = time.time() + timeout * 60
-        while True:
-            ready = is_job_complete(job_name)
-            if ready is True:
-                break
-            if time.time() > timeout:
-                log.warning("timed out waiting for '%s' to be ready",
-                            job_name)
-                sys.exit(1)
-            else:
-                # spread in time potentially parallel execution in multiple
-                # containers
-                time.sleep(random.randint(5, 11))
+    check_service_readiness(service_names, timeout, interval)
+    check_container_readiness(container_names, timeout, interval)
+    check_pod_readiness(pod_names, timeout, interval)
+    check_app_readiness(app_names, timeout, interval)
+    check_job_readiness(job_names, timeout, interval)
+    check_service_mesh_job_readiness(service_mesh_job_container_names, timeout, url)
+
+def check_service_mesh_job_readiness(service_mesh_job_container_names, timeout, url):
     for service_mesh_job_container_name in service_mesh_job_container_names:
         timeout = time.time() + timeout * 60
         while True:
@@ -589,7 +531,102 @@ def main(argv):
             else:
                 # spread in time potentially parallel execution in multiple
                 # containers
-                time.sleep(random.randint(5, 11))
+                time.sleep(random.randint(2, 6))
+
+def check_job_readiness(job_names, timeout, interval=None):
+    for job_name in job_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_job_complete(job_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            job_name)
+                sys.exit(1)
+            else:
+                if interval != None:
+                    time.sleep(interval)
+                else:
+                    # spread in time potentially parallel execution in multiple
+                    # containers
+                    time.sleep(random.randint(2, 6))
+
+def check_app_readiness(app_names, timeout, interval=None):
+    for app_name in app_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_app_ready(app_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            app_name)
+                sys.exit(1)
+            else:
+                if interval != None:
+                    time.sleep(interval)
+                else:
+                    # spread in time potentially parallel execution in multiple
+                    # containers
+                    time.sleep(random.randint(2, 6))
+
+def check_pod_readiness(pod_names, timeout, interval=None):
+    for pod_name in pod_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_pod_ready(pod_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            pod_name)
+                sys.exit(1)
+            else:
+                if interval != None:
+                    time.sleep(interval)
+                else:
+                    # spread in time potentially parallel execution in multiple
+                    # containers
+                    time.sleep(random.randint(2, 6))
+
+def check_container_readiness(container_names, timeout, interval=None):
+    for container_name in container_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_ready(container_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            container_name)
+                sys.exit(1)
+            else:
+                if interval != None:
+                    time.sleep(interval)
+                else:
+                    # spread in time potentially parallel execution in multiple
+                    # containers
+                    time.sleep(random.randint(2, 6))
+
+def check_service_readiness(service_names, timeout, interval=None):
+    for service_name in service_names:
+        timeout = time.time() + timeout * 60
+        while True:
+            ready = is_service_ready(service_name)
+            if ready is True:
+                break
+            if time.time() > timeout:
+                log.warning("timed out waiting for '%s' to be ready",
+                            service_name)
+                sys.exit(1)
+            else:
+                if interval != None:
+                    time.sleep(interval)
+                else:
+                    # spread in time potentially parallel execution in multiple
+                    # containers
+                    time.sleep(random.randint(2, 6))
 
 if __name__ == "__main__":
     main(sys.argv[1:])
