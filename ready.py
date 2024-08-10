@@ -31,6 +31,7 @@ import time
 import random
 import requests
 import socket
+import concurrent.futures
 from contextlib import closing
 
 from kubernetes import client, config
@@ -505,12 +506,27 @@ def main(argv):
     else:
         namespace = ns
 
-    check_service_readiness(service_names, timeout, interval)
-    check_container_readiness(container_names, timeout, interval)
-    check_pod_readiness(pod_names, timeout, interval)
-    check_app_readiness(app_names, timeout, interval)
-    check_job_readiness(job_names, timeout, interval)
-    check_service_mesh_job_readiness(service_mesh_job_container_names, timeout, url)
+    tasks = [
+        (check_service_readiness,(service_names, timeout, interval)),
+        (check_container_readiness, (container_names, timeout, interval)),
+        (check_pod_readiness, (pod_names, timeout, interval)),
+        (check_app_readiness, (app_names, timeout, interval)),
+        (check_job_readiness, (job_names, timeout, interval)),
+        (check_service_mesh_job_readiness, (service_mesh_job_container_names, timeout, url))
+    ]
+
+    # Use ThreadPoolExecutor to run these tasks in parallel.
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_task = {executor.submit(task[0], *task[1]): task for task in tasks}
+
+        for future in concurrent.futures.as_completed(future_to_task):
+            task = future_to_task[future]
+            try:
+                result = future.result()
+                print(f"{task[0].__name__} completed with result: {result}")
+            except Exception as e:
+                print(f"{task[0].__name__} generated an exception: {e}")
+
 
 def check_service_mesh_job_readiness(service_mesh_job_container_names, timeout, url):
     for service_mesh_job_container_name in service_mesh_job_container_names:
