@@ -227,6 +227,7 @@ def is_service_ready(service_name):
     log.info("Checking if service %s is ready", service_name)
     try:
       services = coreV1Api.list_namespaced_service(namespace=namespace,
+                                                   label_selector='app.kubernetes.io/name=' + service_name,
                                                    watch=False)
       for svc in services.items:
         if (svc.metadata.name.startswith(service_name)):
@@ -280,6 +281,7 @@ def is_pod_ready(pod_name):
     log.info("Checking if pod %s is ready", pod_name)
     try:
         response = coreV1Api.list_namespaced_pod(namespace=namespace,
+                                                 label_selector='app.kubernetes.io/name' + pod_name,
                                                  watch=False)
         for item in response.items:
           if (item.metadata.name.startswith(pod_name)):
