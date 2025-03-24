@@ -69,11 +69,12 @@ def is_job_complete(job_name):
     try:
         response = batchV1Api.read_namespaced_job_status(job_name, namespace)
         if response.status.succeeded == 1:
-            job_status_type = response.status.conditions[0].type
-            if job_status_type == "Complete":
-                complete = True
-                log.info("%s is complete", job_name)
-            else:
+            for condition in response.status.conditions:
+                if condition.type == "Complete":
+                    complete = True
+                    log.info("%s is complete", job_name)
+                    break
+            if not complete:
                 log.info("%s is NOT complete", job_name)
         else:
             log.info("%s has not succeeded yet", job_name)
