@@ -299,7 +299,7 @@ def fetch_pod_and_check_if_ready(pod_name):
                                                  watch=False)
         for pod in response.items:
           if (pod.metadata.name.startswith(pod_name)):
-            is_pod_ready(pod)
+            ready = is_pod_ready(pod)
     except ApiException as exc:
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
