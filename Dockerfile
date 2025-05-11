@@ -1,4 +1,5 @@
 FROM python:3.11-alpine
+WORKDIR /app
 
 ENV CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 ENV TOKEN="/var/run/secrets/kubernetes.io/serviceaccount/token"
