@@ -295,11 +295,23 @@ def fetch_pod_and_check_if_ready(pod_name):
     ready = False
     log.info("Checking if pod %s is ready", pod_name)
     try:
-        response = coreV1Api.list_namespaced_pod(namespace=namespace,
-                                                 watch=False)
-        for pod in response.items:
-          if (pod.metadata.name.startswith(pod_name)):
-            ready = is_pod_ready(pod)
+        _continue = ""
+        while True:
+            if not _continue:
+                response = coreV1Api.list_namespaced_pod(namespace=namespace, watch=False, limit=300)
+            else:
+                response = coreV1Api.list_namespaced_pod(namespace=namespace, watch=False, limit=300, _continue=_continue)
+
+            for pod in response.items:
+                if (pod.metadata.name.startswith(pod_name)):
+                    ready = is_pod_ready(pod)
+                    break
+
+            _continue = response._metadata._continue
+
+            if _continue is None:
+                break
+
     except ApiException as exc:
         log.error("Exception when calling list_namespaced_pod: %s\n", exc)
     return ready
@@ -457,6 +469,7 @@ def main(argv):
     url = DEF_URL
     ns = ""
     interval=None
+
     try:
         opts, _args = getopt.getopt(argv, "hj:s:c:p:a:t:m:u:n:i:", ["service-name=",
                                                     "container-name=",
@@ -467,7 +480,7 @@ def main(argv):
                                                     "url=",
                                                     "job-name=",
                                                     "namespace=",
-                                                    "interval="
+                                                    "interval=",
                                                     "help"])
         for opt, arg in opts:
             if opt in ("-h", "--help"):
