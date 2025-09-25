@@ -1,12 +1,19 @@
-FROM python:3.11-alpine
+FROM golang:1.24 AS builder
+
 WORKDIR /app
 
-ENV CERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-ENV TOKEN="/var/run/secrets/kubernetes.io/serviceaccount/token"
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY ready.py .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o readiness .
 
-ENTRYPOINT ["/app/ready.py"]
-CMD [""]
+FROM gcr.io/distroless/static:nonroot
+
+WORKDIR /
+
+COPY --from=builder /app/readiness .
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["./readiness"]
