@@ -469,7 +469,6 @@ def main(argv):
     url = DEF_URL
     ns = ""
     interval=None
-
     try:
         opts, _args = getopt.getopt(argv, "hj:s:c:p:a:t:m:u:n:i:", ["service-name=",
                                                     "container-name=",
