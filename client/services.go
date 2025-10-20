@@ -31,14 +31,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-func (r ReadinessClient) CheckServiceReadiness(namespace string, service_names []string) {
-
-	timeout := 60 * time.Minute
+func (r ReadinessClient) CheckServiceReadiness(namespace string, service_names []string, timeout time.Duration) {
 	startTime := time.Now()
 	for _, name := range service_names {
-		// ready := r.IsJobComplete(job_name)
 		for r.isServiceReady(namespace, name) != true {
-			if time.Since(startTime) > timeout {
+			if time.Since(startTime) > timeout*time.Minute {
 				slog.Warn("timed out waiting for to be ready", slog.String("job", name))
 				os.Exit(1)
 			}

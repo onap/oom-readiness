@@ -21,6 +21,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	readyclient "github.com/onap/readiness/client"
 	"k8s.io/client-go/kubernetes"
@@ -28,6 +29,7 @@ import (
 )
 
 func main() {
+	var timeout time.Duration
 	var namespace string
 	var serviceName string
 	var podName string
@@ -38,6 +40,7 @@ func main() {
 	cli.StringVar(&podName, "pod-name", "", "The name of the pod to wait for")
 	cli.StringVar(&jobName, "job-name", "", "The name of the job to wait for")
 	cli.StringVar(&namespace, "namespace", "", "The Kubernetes namespace the resource is in")
+	cli.DurationVar(&timeout, "timeout", 10, "The time in minutes after which the check is failed")
 	cli.Parse(os.Args[1:])
 
 	client := kubernetesClient()
@@ -46,13 +49,13 @@ func main() {
 		namespace = os.Getenv("NAMESPACE")
 	}
 	if serviceName != "" {
-		readiness.CheckServiceReadiness(namespace, []string{serviceName})
+		readiness.CheckServiceReadiness(namespace, []string{serviceName}, timeout)
 	}
 	if jobName != "" {
-		readiness.CheckJobReadiness(namespace, []string{jobName})
+		readiness.CheckJobReadiness(namespace, []string{jobName}, timeout)
 	}
 	if podName != "" {
-		readiness.CheckPodReadiness(namespace, []string{podName})
+		readiness.CheckPodReadiness(namespace, []string{podName}, timeout)
 	}
 }
 

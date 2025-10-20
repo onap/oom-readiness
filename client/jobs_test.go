@@ -20,6 +20,7 @@ package client
 
 import (
 	"testing"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -108,7 +109,7 @@ func TestCheckJobReadiness(t *testing.T) {
 			readiness := &ReadinessClient{
 				Client: fake.NewSimpleClientset(test.jobs...),
 			}
-			readiness.CheckJobReadiness("namespace1", test.job_names)
+			readiness.CheckJobReadiness("namespace1", test.job_names, time.Duration(10))
 		})
 	}
 }

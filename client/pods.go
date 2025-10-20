@@ -50,20 +50,19 @@ func (r ReadinessClient) IsPodReady(pod corev1.Pod) bool {
 	return true
 }
 
-func (r ReadinessClient) CheckPodReadiness(namespace string, names []string) {
+func (r ReadinessClient) CheckPodReadiness(namespace string, names []string, timeout time.Duration) {
 	for _, name := range names {
 		podsWithName := r.getPodsByName(namespace, name)
 		for _, pod := range podsWithName {
-			go waitForPod(r, pod)
+			go waitForPod(r, pod, timeout)
 		}
 	}
 }
 
-func waitForPod(r ReadinessClient, pod corev1.Pod) {
-	timeout := 60 * time.Minute
+func waitForPod(r ReadinessClient, pod corev1.Pod, timeout time.Duration) {
 	startTime := time.Now()
 	for r.IsPodReady(pod) != true {
-		if time.Since(startTime) > timeout {
+		if time.Since(startTime) > timeout*time.Minute {
 			log.Printf("Timed out waiting for pod %s to be ready", pod.Name)
 			os.Exit(1)
 		}
