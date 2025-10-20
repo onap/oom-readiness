@@ -29,7 +29,7 @@ import (
 )
 
 func main() {
-	var timeout time.Duration
+	var timeout int
 	var namespace string
 	var serviceName string
 	var podName string
@@ -40,8 +40,10 @@ func main() {
 	cli.StringVar(&podName, "pod-name", "", "The name of the pod to wait for")
 	cli.StringVar(&jobName, "job-name", "", "The name of the job to wait for")
 	cli.StringVar(&namespace, "namespace", "", "The Kubernetes namespace the resource is in")
-	cli.DurationVar(&timeout, "timeout", 10, "The time in minutes after which the check is failed")
+	cli.IntVar(&timeout, "timeout", 10, "The time in minutes after which the check is failed")
 	cli.Parse(os.Args[1:])
+
+	timeoutDuration := time.Duration(timeout) * time.Minute
 
 	client := kubernetesClient()
 	readiness := readyclient.ReadinessClient{Client: client}
@@ -49,13 +51,13 @@ func main() {
 		namespace = os.Getenv("NAMESPACE")
 	}
 	if serviceName != "" {
-		readiness.CheckServiceReadiness(namespace, []string{serviceName}, timeout)
+		readiness.CheckServiceReadiness(namespace, []string{serviceName}, timeoutDuration)
 	}
 	if jobName != "" {
-		readiness.CheckJobReadiness(namespace, []string{jobName}, timeout)
+		readiness.CheckJobReadiness(namespace, []string{jobName}, timeoutDuration)
 	}
 	if podName != "" {
-		readiness.CheckPodReadiness(namespace, []string{podName}, timeout)
+		readiness.CheckPodReadiness(namespace, []string{podName}, timeoutDuration)
 	}
 }
 
