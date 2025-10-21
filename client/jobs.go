@@ -47,7 +47,7 @@ func (r ReadinessClient) CheckJobReadiness(namespace string, job_names []string,
 	startTime := time.Now()
 	for _, job_name := range job_names {
 		for r.IsJobComplete(namespace, job_name) != true {
-			if time.Since(startTime) > timeout*time.Minute {
+			if time.Since(startTime) > timeout {
 				slog.Warn("timed out waiting for to be ready", slog.String("job", job_name))
 				os.Exit(1)
 			}

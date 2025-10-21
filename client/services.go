@@ -35,7 +35,7 @@ func (r ReadinessClient) CheckServiceReadiness(namespace string, service_names [
 	startTime := time.Now()
 	for _, name := range service_names {
 		for r.isServiceReady(namespace, name) != true {
-			if time.Since(startTime) > timeout*time.Minute {
+			if time.Since(startTime) > timeout {
 				slog.Warn("timed out waiting for to be ready", slog.String("job", name))
 				os.Exit(1)
 			}

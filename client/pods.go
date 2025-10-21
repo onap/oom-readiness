@@ -62,7 +62,7 @@ func (r ReadinessClient) CheckPodReadiness(namespace string, names []string, tim
 func waitForPod(r ReadinessClient, pod corev1.Pod, timeout time.Duration) {
 	startTime := time.Now()
 	for r.IsPodReady(pod) != true {
-		if time.Since(startTime) > timeout*time.Minute {
+		if time.Since(startTime) > timeout {
 			log.Printf("Timed out waiting for pod %s to be ready", pod.Name)
 			os.Exit(1)
 		}
