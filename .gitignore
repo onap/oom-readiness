@@ -1,1 +1,4 @@
 .vscode
+
+# compiled binary produced by `go build` / `make go_build`
+/readiness

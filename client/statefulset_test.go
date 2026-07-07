@@ -78,3 +78,14 @@ func TestIsStatefulSetReady(t *testing.T) {
 		})
 	}
 }
+
+// A transient API error (e.g. the StatefulSet not existing yet) must report
+// "not ready" rather than dereferencing the nil Spec.Replicas of a zero-value
+// object.
+func TestIsStatefulSetReadyReturnsFalseOnError(t *testing.T) {
+	readiness := ReadinessClient{Client: fake.NewSimpleClientset()}
+
+	if readiness.IsStatefulSetReady("onap", "does-not-exist") {
+		t.Fatal("expected not-ready when the StatefulSet cannot be fetched")
+	}
+}

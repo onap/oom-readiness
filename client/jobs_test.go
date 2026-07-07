@@ -109,7 +109,7 @@ func TestCheckJobReadiness(t *testing.T) {
 			readiness := &ReadinessClient{
 				Client: fake.NewSimpleClientset(test.jobs...),
 			}
-			readiness.CheckJobReadiness("namespace1", test.job_names, time.Duration(10))
+			readiness.CheckJobReadiness("namespace1", test.job_names, 10*time.Second)
 		})
 	}
 }

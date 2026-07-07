@@ -29,7 +29,8 @@ import (
 func (r ReadinessClient) IsStatefulSetReady(namespace string, name string) bool {
 	sts, err := r.Client.AppsV1().StatefulSets(namespace).Get(context.TODO(), name, v1.GetOptions{})
 	if err != nil {
-		log.Printf("Error while get for StatefulSet %s: %v", sts.Name, err)
+		log.Printf("Error while get for StatefulSet %s: %v", name, err)
+		return false
 	}
 	if isReady(sts) {
 		log.Printf("StatefulSet %s is ready", sts.Name)

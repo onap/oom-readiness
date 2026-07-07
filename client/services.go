@@ -85,15 +85,22 @@ func getPodsByEndpoint(service *v1.Service, r ReadinessClient, namespace string)
 	}
 	for _, endpoint := range endpoints.Items {
 		if strings.HasPrefix(endpoint.Name, service.Name) {
+			if len(endpoint.Subsets) == 0 {
+				continue
+			}
 			addresses := endpoint.Subsets[0].Addresses
 			if addresses != nil {
 				pods := []v1.Pod{}
 				for _, address := range addresses {
+					if address.TargetRef == nil {
+						continue
+					}
 					name := address.TargetRef.Name
 					log.Printf("Found pod %s selected by service %s", name, service.Name)
 					pod, err := r.Client.CoreV1().Pods(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 					if err != nil {
 						log.Printf("Error while getting pod %s: %v", name, err)
+						continue
 					}
 					pods = append(pods, *pod)
 				}

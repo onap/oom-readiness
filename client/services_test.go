@@ -20,6 +20,7 @@ package client
 
 import (
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -149,5 +150,90 @@ func TestIsServiceReady(t *testing.T) {
 				t.Fatalf("expected ready to be %t, but was %t", true, ready)
 			}
 		})
+	}
+}
+
+// A Service whose backends are not up yet has Endpoints without any ready
+// addresses — precisely the state this tool waits through. Resolving it must
+// report "not ready" instead of panicking on an empty Subsets slice.
+func TestIsServiceReadyWithoutReadyEndpoints(t *testing.T) {
+	tests := []struct {
+		name      string
+		endpoints corev1.Endpoints
+	}{
+		{
+			name: "Endpoints exist but have no subsets",
+			endpoints: corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "cassandra-dc1-service", Namespace: "onap"},
+			},
+		},
+		{
+			name: "Endpoints have a subset but no ready addresses",
+			endpoints: corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "cassandra-dc1-service", Namespace: "onap"},
+				Subsets: []corev1.EndpointSubset{
+					{NotReadyAddresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}}},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resources := []runtime.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{Name: "cassandra-dc1-service", Namespace: "onap"},
+					Spec:       corev1.ServiceSpec{Selector: nil},
+				},
+				&test.endpoints,
+			}
+
+			r := ReadinessClient{Client: fake.NewSimpleClientset(resources...)}
+
+			if r.isServiceReady("onap", "cassandra-dc1-service") {
+				t.Fatal("expected service to be not ready when no ready endpoints exist")
+			}
+		})
+	}
+}
+
+// CheckServiceReadiness must return once the service resolves to ready pods.
+func TestCheckServiceReadiness(t *testing.T) {
+	const namespace = "onap"
+	selectorLabels := map[string]string{"app": "cassandra"}
+	resources := []runtime.Object{
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "cassandra-dc1-service", Namespace: namespace},
+			Spec:       corev1.ServiceSpec{Selector: selectorLabels},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "cassandra-dc1-default-sts-0",
+				Namespace: namespace,
+				Labels:    selectorLabels,
+				OwnerReferences: []metav1.OwnerReference{
+					{Kind: "StatefulSet", Name: "cassandra-dc1-default-sts"},
+				},
+			},
+		},
+		&appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "cassandra-dc1-default-sts", Namespace: namespace, Generation: 1},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+			Status:     appsv1.StatefulSetStatus{Replicas: 1, ReadyReplicas: 1, ObservedGeneration: 1},
+		},
+	}
+
+	r := ReadinessClient{Client: fake.NewSimpleClientset(resources...)}
+
+	done := make(chan struct{})
+	go func() {
+		r.CheckServiceReadiness(namespace, []string{"cassandra-dc1-service"}, 5*time.Second)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CheckServiceReadiness did not return for a ready service within 5s")
 	}
 }
