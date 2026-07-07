@@ -19,7 +19,9 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"log"
 	"os"
 	"time"
 
@@ -43,6 +45,11 @@ func main() {
 	cli.IntVar(&timeout, "timeout", 10, "The time in minutes after which the check is failed")
 	cli.Parse(os.Args[1:])
 
+	if err := validateArgs(serviceName, podName, jobName); err != nil {
+		log.Printf("%v", err)
+		os.Exit(1)
+	}
+
 	timeoutDuration := time.Duration(timeout) * time.Minute
 
 	client := kubernetesClient()
@@ -59,6 +66,16 @@ func main() {
 	if podName != "" {
 		readiness.CheckPodReadiness(namespace, []string{podName}, timeoutDuration)
 	}
+}
+
+// validateArgs ensures at least one resource to wait for was requested.
+// Without this guard a misconfigured init container (no/typo'd flag) would
+// exit 0 immediately, letting the pod start before its dependency is ready.
+func validateArgs(serviceName string, podName string, jobName string) error {
+	if serviceName == "" && podName == "" && jobName == "" {
+		return errors.New("no resource to wait for: set at least one of --service-name, --pod-name or --job-name")
+	}
+	return nil
 }
 
 func kubernetesClient() kubernetes.Interface {
