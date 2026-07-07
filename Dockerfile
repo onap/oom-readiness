@@ -1,4 +1,4 @@
-FROM golang:1.24 AS builder
+FROM nexus3.onap.org:10001/golang:1.26.4 AS builder
 
 WORKDIR /app
 

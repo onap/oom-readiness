@@ -16,24 +16,31 @@
 //   SPDX-License-Identifier: Apache-2.0
 //   ========================LICENSE_END===================================
 
-package client
+package main
 
-import (
-	"context"
-	"log"
+import "testing"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-func (r ReadinessClient) isDaemonSetReady(namespace string, name string) bool {
-	ds, err := r.Client.AppsV1().DaemonSets(namespace).Get(context.TODO(), name, v1.GetOptions{})
-	if err != nil {
-		log.Printf("Error while getting DeamonSet %s: %v", name, err)
-		return false
+func TestValidateArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceName string
+		podName     string
+		jobName     string
+		wantErr     bool
+	}{
+		{name: "no resource flag set is an error", wantErr: true},
+		{name: "service name is enough", serviceName: "my-svc"},
+		{name: "pod name is enough", podName: "my-pod"},
+		{name: "job name is enough", jobName: "my-job"},
 	}
-	if ds.Status.DesiredNumberScheduled == ds.Status.NumberReady {
-		log.Printf("DaemonSet: %d/%d nodes ready --> %s is ready", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled, ds.Name)
-		return true
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateArgs(test.serviceName, test.podName, test.jobName)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateArgs(%q,%q,%q) error = %v, wantErr %t",
+					test.serviceName, test.podName, test.jobName, err, test.wantErr)
+			}
+		})
 	}
-	return false
 }
