@@ -18,29 +18,49 @@
 
 package main
 
-import "testing"
+import (
+	"flag"
+	"reflect"
+	"testing"
+)
 
 func TestValidateArgs(t *testing.T) {
 	tests := []struct {
-		name        string
-		serviceName string
-		podName     string
-		jobName     string
-		wantErr     bool
+		name         string
+		serviceNames []string
+		podNames     []string
+		jobNames     []string
+		wantErr      bool
 	}{
 		{name: "no resource flag set is an error", wantErr: true},
-		{name: "service name is enough", serviceName: "my-svc"},
-		{name: "pod name is enough", podName: "my-pod"},
-		{name: "job name is enough", jobName: "my-job"},
+		{name: "service name is enough", serviceNames: []string{"my-svc"}},
+		{name: "pod name is enough", podNames: []string{"my-pod"}},
+		{name: "job name is enough", jobNames: []string{"my-job"}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateArgs(test.serviceName, test.podName, test.jobName)
+			err := validateArgs(test.serviceNames, test.podNames, test.jobNames)
 			if (err != nil) != test.wantErr {
 				t.Fatalf("validateArgs(%q,%q,%q) error = %v, wantErr %t",
-					test.serviceName, test.podName, test.jobName, err, test.wantErr)
+					test.serviceNames, test.podNames, test.jobNames, err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestStringListKeepsEveryOccurrence(t *testing.T) {
+	var services stringList
+	cli := flag.NewFlagSet("readiness", flag.ContinueOnError)
+	cli.Var(&services, "service-name", "")
+
+	err := cli.Parse([]string{"--service-name", "sdc-be", "--service-name", "cds-blueprints-processor-http"})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	want := stringList{"sdc-be", "cds-blueprints-processor-http"}
+	if !reflect.DeepEqual(services, want) {
+		t.Fatalf("services = %q, want %q", services, want)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	readyclient "github.com/onap/readiness/client"
@@ -30,22 +31,34 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// stringList collects every occurrence of a repeated flag.
+type stringList []string
+
+func (s *stringList) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringList) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 func main() {
 	var timeout int
 	var namespace string
-	var serviceName string
-	var podName string
-	var jobName string
+	var serviceNames stringList
+	var podNames stringList
+	var jobNames stringList
 
 	cli := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	cli.StringVar(&serviceName, "service-name", "", "The name of the service to wait for")
-	cli.StringVar(&podName, "pod-name", "", "The name of the pod to wait for")
-	cli.StringVar(&jobName, "job-name", "", "The name of the job to wait for")
+	cli.Var(&serviceNames, "service-name", "The name of a service to wait for (repeatable)")
+	cli.Var(&podNames, "pod-name", "The name of a pod to wait for (repeatable)")
+	cli.Var(&jobNames, "job-name", "The name of a job to wait for (repeatable)")
 	cli.StringVar(&namespace, "namespace", "", "The Kubernetes namespace the resource is in")
 	cli.IntVar(&timeout, "timeout", 10, "The time in minutes after which the check is failed")
 	cli.Parse(os.Args[1:])
 
-	if err := validateArgs(serviceName, podName, jobName); err != nil {
+	if err := validateArgs(serviceNames, podNames, jobNames); err != nil {
 		log.Printf("%v", err)
 		os.Exit(1)
 	}
@@ -57,22 +70,22 @@ func main() {
 	if namespace == "" {
 		namespace = os.Getenv("NAMESPACE")
 	}
-	if serviceName != "" {
-		readiness.CheckServiceReadiness(namespace, []string{serviceName}, timeoutDuration)
+	if len(serviceNames) > 0 {
+		readiness.CheckServiceReadiness(namespace, serviceNames, timeoutDuration)
 	}
-	if jobName != "" {
-		readiness.CheckJobReadiness(namespace, []string{jobName}, timeoutDuration)
+	if len(jobNames) > 0 {
+		readiness.CheckJobReadiness(namespace, jobNames, timeoutDuration)
 	}
-	if podName != "" {
-		readiness.CheckPodReadiness(namespace, []string{podName}, timeoutDuration)
+	if len(podNames) > 0 {
+		readiness.CheckPodReadiness(namespace, podNames, timeoutDuration)
 	}
 }
 
 // validateArgs ensures at least one resource to wait for was requested.
 // Without this guard a misconfigured init container (no/typo'd flag) would
 // exit 0 immediately, letting the pod start before its dependency is ready.
-func validateArgs(serviceName string, podName string, jobName string) error {
-	if serviceName == "" && podName == "" && jobName == "" {
+func validateArgs(serviceNames []string, podNames []string, jobNames []string) error {
+	if len(serviceNames) == 0 && len(podNames) == 0 && len(jobNames) == 0 {
 		return errors.New("no resource to wait for: set at least one of --service-name, --pod-name or --job-name")
 	}
 	return nil
