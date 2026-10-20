@@ -1,0 +1,233 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# =============================================================================
+# Docker merge for the readiness image.
+#
+# On every merged change, builds ./Dockerfile as onap/oom/readiness through
+# the docker-workflows merge reusable, gates it on hadolint, the image SBOM
+# and a Grype scan, then stages it on the snapshot registry under the tag
+# set derived from version.properties:
+#
+#   nexus3.onap.org:10003/onap/oom/readiness:X.Y.Z-SNAPSHOT-latest
+#   nexus3.onap.org:10003/onap/oom/readiness:X.Y-STAGING-latest
+#   nexus3.onap.org:10003/onap/oom/readiness:X.Y.Z-<timestamp>Z
+#
+# A merged change that adds a releases/*-container.yaml file also promotes
+# the images it names to nexus3.onap.org:10002, copying by digest.
+#
+# DRY RUN
+#
+# dry_run is on: every job runs and the step summaries list each tag and
+# promotion the lane would write, but no credential loads, no registry
+# login happens and nothing is pushed. Publishing needs a Nexus account
+# for this repository whose password sits in the organisation's 1Password
+# vault under the item 'oom-readiness', the name the reusable derives from
+# the repository. Once that exists, removing the dry_run line publishes.
+#
+# The tags above are disjoint from the 'latest' tag the Jenkins docker
+# merge job pushes, so the two can publish side by side without either
+# overwriting the other.
+#
+# NO SCHEDULE
+#
+# The reusable checks the newest commit for a container release file on
+# every run, so a timed run would re-attempt promotion whenever a release
+# commit sits at the branch tip. A periodic rebuild is therefore not added
+# here.
+#
+# REPORT-ONLY CHECKS AND EGRESS
+#
+# lint_permit_fail, grype_permit_fail and build_permit_egress_traffic are
+# set for the reasons given in gerrit-docker-verify.yaml: hadolint reports
+# DL3066 against the current Dockerfile, Grype advisories move
+# independently of the merged change, and gcr.io (the distroless base) is
+# not on the pinned egress allow-list. Findings are reported; staging is
+# not withheld for them.
+#
+# grype_cache_db is restore-only because both lanes share one Grype
+# database cache prefix and only one job should save it; the verify lane,
+# which runs on every patchset, keeps it fresh.
+#
+# DEPLOYMENT NOTES:
+#   * gerrit_to_platform discovers this caller by filename (contains both
+#     'gerrit' and 'merge') and dispatches it on change-merged and on a
+#     'remerge' comment.
+#   * The file must exist on every branch that should publish.
+#   * Merge lanes comment on the change; they never vote.
+#   * GERRIT_DISABLED runs the lane manually from the GitHub UI against
+#     the default branch, without touching Gerrit.
+#   * Uses the organisation variables GERRIT_SERVER, GERRIT_SSH_USER,
+#     GERRIT_KNOWN_HOSTS, GERRIT_URL and the secrets GERRIT_SSH_PRIVKEY,
+#     OP_SERVICE_ACCOUNT_TOKEN and VAULT_MAPPING_JSON.
+# =============================================================================
+name: "Gerrit Docker Merge"
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      GERRIT_BRANCH:
+        description: "Branch that change is against"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_ID:
+        description: "The ID for the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_NUMBER:
+        description: "The Gerrit number"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_URL:
+        description: "URL to the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_EVENT_TYPE:
+        description: "Type of Gerrit event"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PATCHSET_NUMBER:
+        description: "The patch number for the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PATCHSET_REVISION:
+        description: "The revision sha"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PROJECT:
+        description: "Project in Gerrit"
+        required: false
+        type: string
+        default: ""
+      GERRIT_REFSPEC:
+        description: "Gerrit refspec of change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_DISABLED:
+        description: "Run without Gerrit components"
+        required: false
+        default: false
+        type: boolean
+
+# Publishes serialise per target branch, so runs cannot finish out of
+# order and regress the rolling SNAPSHOT-latest/STAGING-latest tags, and
+# an in-flight publish always completes. The workflow name scopes the
+# repository-wide group to this lane.
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ inputs.GERRIT_PROJECT }}-${{ inputs.GERRIT_BRANCH }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Comment on the merged change so the start of the merge pipeline is
+  # visible in Gerrit (comment-only: the change has already merged).
+  notify:
+    if: inputs.GERRIT_DISABLED != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: "Harden runner"
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - name: "Notify merge pipeline start"
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/gerrit-review-action@1e3eae766b3de755a2e87aa216cedebbaf9c8292  # v1.1.3
+        with:
+          host: ${{ vars.GERRIT_SERVER }}
+          username: ${{ vars.GERRIT_SSH_USER }}
+          key: ${{ secrets.GERRIT_SSH_PRIVKEY }}
+          known_hosts: ${{ vars.GERRIT_KNOWN_HOSTS }}
+          gerrit-change-number: ${{ inputs.GERRIT_CHANGE_NUMBER }}
+          gerrit-patchset-number: ${{ inputs.GERRIT_PATCHSET_NUMBER }}
+          vote-type: clear
+          comment-only: "true"
+      - name: "Allow replication"
+        run: sleep 10s
+
+  merge:
+    needs: notify
+    if: >-
+      always()
+      && (needs.notify.result == 'success'
+          || needs.notify.result == 'skipped')
+    permissions:
+      contents: read
+    # yamllint disable-line rule:line-length
+    uses: lfreleng-actions/docker-workflows/.github/workflows/merge.yaml@9ef43e46945da15d81dee702da7f461ec030553e  # v0.10.0
+    with:
+      # With GERRIT_DISABLED the gerrit_* values are blanked, so the
+      # reusable checks out the default branch.
+      # yamllint disable-line rule:line-length
+      gerrit_refspec: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_REFSPEC || '' }}
+      # yamllint disable-line rule:line-length
+      gerrit_project: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_PROJECT || '' }}
+      # yamllint disable-line rule:line-length
+      gerrit_branch: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_BRANCH || '' }}
+      # Checkouts pin to the dispatched commit, so a queued run still
+      # examines the change that dispatched it, release file included,
+      # after the branch has moved on.
+      # yamllint disable-line rule:line-length
+      gerrit_revision: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_PATCHSET_REVISION || '' }}
+      # gerrit_url falls back to the GERRIT_URL organisation variable.
+      snapshot_registry: "nexus3.onap.org:10003"
+      release_registry: "nexus3.onap.org:10002"
+      images: '[{"name": "oom/readiness", "context": "."}]'
+      namespace_mode: "manual"
+      namespace: "onap"
+      build_permit_egress_traffic: true
+      lint_permit_fail: true
+      grype_permit_fail: true
+      grype_cache_db: "restore-only"
+      dry_run: true
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      VAULT_MAPPING_JSON: ${{ secrets.VAULT_MAPPING_JSON }}
+
+  # Report the overall workflow conclusion back to Gerrit as a comment
+  # (comment-only: merge pipelines never vote).
+  report:
+    if: ${{ always() && inputs.GERRIT_DISABLED != true }}
+    needs: [notify, merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # workflow-conclusion queries the Actions API to list run jobs
+      actions: read
+    timeout-minutes: 5
+    steps:
+      - name: "Harden runner"
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - name: "Get conclusion"
+        # yamllint disable-line rule:line-length
+        uses: im-open/workflow-conclusion@8eac7f17381a6917bc04fec3e2c92e70ebc37526  # v3.0.0
+      - name: "Report conclusion"
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/gerrit-review-action@1e3eae766b3de755a2e87aa216cedebbaf9c8292  # v1.1.3
+        with:
+          host: ${{ vars.GERRIT_SERVER }}
+          username: ${{ vars.GERRIT_SSH_USER }}
+          key: ${{ secrets.GERRIT_SSH_PRIVKEY }}
+          known_hosts: ${{ vars.GERRIT_KNOWN_HOSTS }}
+          gerrit-change-number: ${{ inputs.GERRIT_CHANGE_NUMBER }}
+          gerrit-patchset-number: ${{ inputs.GERRIT_PATCHSET_NUMBER }}
+          vote-type: ${{ env.WORKFLOW_CONCLUSION }}
+          comment-only: "true"

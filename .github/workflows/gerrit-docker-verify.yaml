@@ -1,0 +1,197 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# =============================================================================
+# Docker verify for the readiness image.
+#
+# Builds ./Dockerfile as onap/oom/readiness through the docker-workflows
+# build-test reusable: hadolint over the Dockerfile, a buildx build, an
+# image SBOM and a Grype scan of that SBOM. The outcome is voted back to
+# the Gerrit change as Verified.
+#
+# The image is declared through 'images' rather than discovered, because
+# discovery names a root Dockerfile after the repository (oom-readiness),
+# while this project publishes the image as oom/readiness under the onap
+# namespace.
+#
+# REPORT-ONLY CHECKS
+#
+# lint_permit_fail: hadolint 2.15.1, the version the reusable pins,
+#   reports DL3066 (non-numeric user) against 'USER nonroot:nonroot'.
+#   Gating on it would vote Verified -1 on every change for a finding
+#   that predates them. Drop the input once the Dockerfile names the user
+#   numerically (65532:65532 is the distroless nonroot account).
+# grype_permit_fail: the vulnerability database moves daily, independently
+#   of the change under review, so a new advisory against a base image
+#   would fail unrelated changes. Findings stay in the run summary and in
+#   the uploaded scan results.
+#
+# EGRESS
+#
+# The final stage builds FROM gcr.io/distroless/static, and gcr.io is not
+# on the pinned harden-runner allow-list, so the build job runs
+# harden-runner in audit mode (build_permit_egress_traffic). Every other
+# job stays in block mode.
+#
+# DEPLOYMENT NOTES:
+#   * gerrit_to_platform discovers this caller by filename (contains both
+#     'gerrit' and 'verify') and dispatches it on patchset creation.
+#   * The file must exist on every branch that should run the check.
+#   * GERRIT_DISABLED runs the lane manually from the GitHub UI against
+#     the default branch, without touching Gerrit.
+#   * Uses the organisation variables GERRIT_SERVER, GERRIT_SSH_USER,
+#     GERRIT_KNOWN_HOSTS, GERRIT_URL and the secret GERRIT_SSH_PRIVKEY.
+# =============================================================================
+name: "Gerrit Docker Verify"
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      GERRIT_BRANCH:
+        description: "Branch that change is against"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_ID:
+        description: "The ID for the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_NUMBER:
+        description: "The Gerrit number"
+        required: false
+        type: string
+        default: ""
+      GERRIT_CHANGE_URL:
+        description: "URL to the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_EVENT_TYPE:
+        description: "Type of Gerrit event"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PATCHSET_NUMBER:
+        description: "The patch number for the change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PATCHSET_REVISION:
+        description: "The revision sha"
+        required: false
+        type: string
+        default: ""
+      GERRIT_PROJECT:
+        description: "Project in Gerrit"
+        required: false
+        type: string
+        default: ""
+      GERRIT_REFSPEC:
+        description: "Gerrit refspec of change"
+        required: false
+        type: string
+        default: ""
+      GERRIT_DISABLED:
+        description: "Run without Gerrit components"
+        required: false
+        default: false
+        type: boolean
+
+# Concurrency groups are repository-wide; the workflow name keeps another
+# per-change lane from cancelling this one.
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.inputs.GERRIT_CHANGE_ID || github.run_id }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # Clear any previous Verified vote so the change starts from a clean state.
+  clear-vote:
+    if: inputs.GERRIT_DISABLED != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: "Harden runner"
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - name: "Clear votes"
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/gerrit-review-action@1e3eae766b3de755a2e87aa216cedebbaf9c8292  # v1.1.3
+        with:
+          host: ${{ vars.GERRIT_SERVER }}
+          username: ${{ vars.GERRIT_SSH_USER }}
+          key: ${{ secrets.GERRIT_SSH_PRIVKEY }}
+          known_hosts: ${{ vars.GERRIT_KNOWN_HOSTS }}
+          gerrit-change-number: ${{ inputs.GERRIT_CHANGE_NUMBER }}
+          gerrit-patchset-number: ${{ inputs.GERRIT_PATCHSET_NUMBER }}
+          vote-type: clear
+      - name: "Allow replication"
+        run: sleep 10s
+
+  build-test:
+    needs: clear-vote
+    if: >-
+      always()
+      && (needs.clear-vote.result == 'success'
+          || needs.clear-vote.result == 'skipped')
+    permissions:
+      contents: read
+      pull-requests: read  # repository-metadata-action queries PR data
+    # yamllint disable-line rule:line-length
+    uses: lfreleng-actions/docker-workflows/.github/workflows/build-test.yaml@9ef43e46945da15d81dee702da7f461ec030553e  # v0.10.0
+    with:
+      # With GERRIT_DISABLED the gerrit_* values are blanked, so the
+      # reusable checks out the default branch instead of the change.
+      # yamllint disable-line rule:line-length
+      gerrit_refspec: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_REFSPEC || '' }}
+      # yamllint disable-line rule:line-length
+      gerrit_project: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_PROJECT || '' }}
+      # yamllint disable-line rule:line-length
+      gerrit_branch: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_BRANCH || '' }}
+      # gerrit_url falls back to the GERRIT_URL organisation variable.
+      images: '[{"name": "oom/readiness", "context": "."}]'
+      namespace_mode: "manual"
+      namespace: "onap"
+      build_permit_egress_traffic: true
+      lint_permit_fail: true
+      grype_permit_fail: true
+
+  # Report the overall workflow conclusion back to Gerrit as a Verified vote.
+  vote:
+    if: ${{ always() && inputs.GERRIT_DISABLED != true }}
+    needs: [clear-vote, build-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # workflow-conclusion queries the Actions API to list run jobs
+      actions: read
+    timeout-minutes: 5
+    steps:
+      - name: "Harden runner"
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - name: "Get conclusion"
+        # yamllint disable-line rule:line-length
+        uses: im-open/workflow-conclusion@8eac7f17381a6917bc04fec3e2c92e70ebc37526  # v3.0.0
+      - name: "Set vote"
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/gerrit-review-action@1e3eae766b3de755a2e87aa216cedebbaf9c8292  # v1.1.3
+        with:
+          host: ${{ vars.GERRIT_SERVER }}
+          username: ${{ vars.GERRIT_SSH_USER }}
+          key: ${{ secrets.GERRIT_SSH_PRIVKEY }}
+          known_hosts: ${{ vars.GERRIT_KNOWN_HOSTS }}
+          gerrit-change-number: ${{ inputs.GERRIT_CHANGE_NUMBER }}
+          gerrit-patchset-number: ${{ inputs.GERRIT_PATCHSET_NUMBER }}
+          vote-type: ${{ env.WORKFLOW_CONCLUSION }}
