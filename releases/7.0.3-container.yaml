@@ -1,0 +1,8 @@
+distribution_type: 'container'
+container_release_tag: '7.0.3'
+project: 'oom/readiness'
+log_dir: 'oom-readiness-docker-merge-master/402'
+ref: 172edfbca002c303d1ba9e86aaf0805ef1ce3365
+containers:
+  - name: 'oom/readiness'
+    version: 'latest'
