@@ -17,14 +17,27 @@
 # A merged change that adds a releases/*-container.yaml file also promotes
 # the images it names to nexus3.onap.org:10002, copying by digest.
 #
-# DRY RUN
+# IMAGE NAME
 #
-# dry_run is on: every job runs and the step summaries list each tag and
-# promotion the lane would write, but no credential loads, no registry
-# login happens and nothing is pushed. Publishing needs a Nexus account
-# for this repository whose password sits in the organisation's 1Password
-# vault under the item 'oom-readiness', the name the reusable derives from
-# the repository. Once that exists, removing the dry_run line publishes.
+# build_command builds the image and build_command_images names the
+# reference the publish step stages. The reusable's 'images' input is not
+# used: its image matrix rewrites every character outside [a-z0-9._-] to
+# '-', '/' included, so oom/readiness would stage as onap/oom-readiness
+# while release promotion reads onap/oom/readiness, the name the
+# container release files give. Declaring the reference keeps staging
+# and promotion on one path. 'images' can return once the matrix keeps
+# '/' in image names.
+#
+# PUBLISHING
+#
+# The publish jobs log in to Nexus as the account 'oom-readiness' with the
+# password held under the item of the same name in the organisation's
+# 1Password vault; the reusable derives both names from the repository.
+# Only the publish jobs load the credential.
+#
+# Promotion never overwrites a release tag: it skips one that already
+# holds the staged digest, and fails before writing anything on one that
+# holds a different image.
 #
 # The tags above are disjoint from the 'latest' tag the Jenkins docker
 # merge job pushes, so the two can publish side by side without either
@@ -194,7 +207,6 @@ jobs:
       lint_permit_fail: true
       grype_permit_fail: true
       grype_cache_db: "restore-only"
-      dry_run: true
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
       VAULT_MAPPING_JSON: ${{ secrets.VAULT_MAPPING_JSON }}
