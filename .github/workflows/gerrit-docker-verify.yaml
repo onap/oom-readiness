@@ -6,14 +6,19 @@
 # Docker verify for the readiness image.
 #
 # Builds ./Dockerfile as onap/oom/readiness through the docker-workflows
-# build-test reusable: hadolint over the Dockerfile, a buildx build, an
+# build-test reusable: hadolint over the Dockerfile, a docker build, an
 # image SBOM and a Grype scan of that SBOM. The outcome is voted back to
 # the Gerrit change as Verified.
 #
-# The image is declared through 'images' rather than discovered, because
-# discovery names a root Dockerfile after the repository (oom-readiness),
-# while this project publishes the image as oom/readiness under the onap
-# namespace.
+# IMAGE NAME
+#
+# build_command builds the image and build_command_images names it, so
+# both lanes build onap/oom/readiness the same way, with 'docker build'
+# from the repository root as the Jenkins jobs do. The reusable's 'images'
+# input is not used: its image matrix rewrites every character outside
+# [a-z0-9._-] to '-', '/' included, which turns oom/readiness into
+# oom-readiness. gerrit-docker-merge.yaml explains why that matters when
+# publishing.
 #
 # REPORT-ONLY CHECKS
 #
@@ -158,7 +163,8 @@ jobs:
       # yamllint disable-line rule:line-length
       gerrit_branch: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_BRANCH || '' }}
       # gerrit_url falls back to the GERRIT_URL organisation variable.
-      images: '[{"name": "oom/readiness", "context": "."}]'
+      build_command: "docker build --tag onap/oom/readiness:verify ."
+      build_command_images: "onap/oom/readiness:verify"
       namespace_mode: "manual"
       namespace: "onap"
       build_permit_egress_traffic: true

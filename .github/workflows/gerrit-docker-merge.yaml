@@ -17,6 +17,17 @@
 # A merged change that adds a releases/*-container.yaml file also promotes
 # the images it names to nexus3.onap.org:10002, copying by digest.
 #
+# IMAGE NAME
+#
+# build_command builds the image and build_command_images names the
+# reference the publish step stages. The reusable's 'images' input is not
+# used: its image matrix rewrites every character outside [a-z0-9._-] to
+# '-', '/' included, so oom/readiness would stage as onap/oom-readiness
+# while release promotion reads onap/oom/readiness, the name the
+# container release files give. Declaring the reference keeps staging
+# and promotion on one path. 'images' can return once the matrix keeps
+# '/' in image names.
+#
 # DRY RUN
 #
 # dry_run is on: every job runs and the step summaries list each tag and
@@ -187,7 +198,8 @@ jobs:
       # gerrit_url falls back to the GERRIT_URL organisation variable.
       snapshot_registry: "nexus3.onap.org:10003"
       release_registry: "nexus3.onap.org:10002"
-      images: '[{"name": "oom/readiness", "context": "."}]'
+      build_command: "docker build --tag onap/oom/readiness:verify ."
+      build_command_images: "onap/oom/readiness:verify"
       namespace_mode: "manual"
       namespace: "onap"
       build_permit_egress_traffic: true
