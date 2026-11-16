@@ -190,11 +190,10 @@ jobs:
       gerrit_project: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_PROJECT || '' }}
       # yamllint disable-line rule:line-length
       gerrit_branch: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_BRANCH || '' }}
-      # Checkouts pin to the dispatched commit, so a queued run still
-      # examines the change that dispatched it, release file included,
-      # after the branch has moved on.
-      # yamllint disable-line rule:line-length
-      gerrit_revision: ${{ !inputs.GERRIT_DISABLED && inputs.GERRIT_PATCHSET_REVISION || '' }}
+      # No gerrit_revision: on change-merged, GERRIT_PATCHSET_REVISION is
+      # the change's own commit, not the merge commit Gerrit records when
+      # the change is not based on the branch tip. Without it each job
+      # checks out the branch tip, which holds the change as merged.
       # gerrit_url falls back to the GERRIT_URL organisation variable.
       snapshot_registry: "nexus3.onap.org:10003"
       release_registry: "nexus3.onap.org:10002"
