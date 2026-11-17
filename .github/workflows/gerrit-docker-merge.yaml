@@ -14,6 +14,9 @@
 #   nexus3.onap.org:10003/onap/oom/readiness:X.Y-STAGING-latest
 #   nexus3.onap.org:10003/onap/oom/readiness:X.Y.Z-<timestamp>Z
 #
+# On master it then points nexus3.onap.org:10003/onap/oom/readiness:latest
+# at the same image (see LATEST).
+#
 # A merged change that adds a releases/*-container.yaml file also promotes
 # the images it names to nexus3.onap.org:10002, copying by digest.
 #
@@ -33,22 +36,34 @@
 # The publish jobs log in to Nexus as the account 'oom-readiness' with the
 # password held under the item of the same name in the organisation's
 # 1Password vault; the reusable derives both names from the repository.
-# Only the publish jobs load the credential.
+# Only the publish jobs and tag-latest load the credential.
 #
 # Promotion never overwrites a release tag: it skips one that already
 # holds the staged digest, and fails before writing anything on one that
 # holds a different image.
 #
-# The tags above are disjoint from the 'latest' tag the Jenkins docker
-# merge job pushes, so the two can publish side by side without either
-# overwriting the other.
+# LATEST
+#
+# The container release files promote 'latest' from the snapshot
+# registry, a tag the Jenkins docker merge job wrote on every master
+# build. The reusable stages only the version-derived tags above, so on
+# master the tag-latest job copies the manifest of the snapshot this run
+# staged to 'latest', giving both tags one digest. Remove the job once
+# the reusable can write 'latest' itself. While the Jenkins job remains,
+# both write 'latest' from the same branch, and the later write holds
+# the tag.
 #
 # NO SCHEDULE
 #
-# The reusable checks the newest commit for a container release file on
-# every run, so a timed run would re-attempt promotion whenever a release
-# commit sits at the branch tip. A periodic rebuild is therefore not added
-# here.
+# The Jenkins docker merge job also rebuilt master weekly; that is not
+# carried over. The build is pinned (Go toolchain image tag and go.sum),
+# so a weekly rebuild changes only the distroless base layer, and every
+# merge rebuilds 'latest', the tag a release ships. GitHub also disables
+# a schedule after 60 days without repository activity. And the reusable
+# checks the newest commit for a container release file on every run, so
+# a timed run would re-attempt promotion whenever a release commit sits
+# at the branch tip. A 'remerge' comment on the newest merged change
+# rebuilds the branch on demand.
 #
 # REPORT-ONLY CHECKS AND EGRESS
 #
@@ -211,11 +226,118 @@ jobs:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
       VAULT_MAPPING_JSON: ${{ secrets.VAULT_MAPPING_JSON }}
 
+  # Point 'latest' at the image this run staged (see LATEST above).
+  tag-latest:
+    needs: merge
+    if: >-
+      ${{ !cancelled()
+      && github.ref == 'refs/heads/master'
+      && needs.merge.outputs.snapshot_publish_result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Reads when this run left the queue, to recognise its snapshot
+      actions: read
+    timeout-minutes: 10
+    env:
+      IMAGE: "nexus3.onap.org:10003/onap/oom/readiness"
+    steps:
+      - name: "Load egress allow-list"
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          # The list the reusable pins; it covers Nexus and 1Password.
+          # yamllint disable-line rule:line-length
+          config: "lfreleng-actions//.github/harden-runner/lfreleng-actions/allow_list.txt@6e6cab073a93c0d58e4e8846d44e1cbddbac975b"
+          allow_list_summary: "false"
+      - name: "Harden runner"
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+      - name: "Find the snapshot this run staged"
+        id: staged
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Gerrit runs of this lane queue per branch (see concurrency)
+          # and a run's jobs are created only once it leaves the queue,
+          # so a snapshot stamped after this run's first job was created
+          # is this run's own (barring an overlapping GERRIT_DISABLED
+          # run, whose snapshot is just as new a build of the branch).
+          # The publish job also succeeds when it pushes nothing
+          # (credential unavailable); 'latest' then stays where it is.
+          run_url="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          started=$(gh api --jq '[.jobs[].created_at] | min' \
+            "${run_url}/attempts/1/jobs?per_page=100")
+          since=$(date -u -d "${started}" '+%Y%m%dT%H%M%SZ')
+          tags=$(curl -fsS "https://${IMAGE%%/*}/v2/${IMAGE#*/}/tags/list" \
+            | jq -r '.tags[]?')
+          tag=$(printf '%s\n' "${tags}" \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]{8}T[0-9]{6}Z$' \
+            | awk -F- '{print $NF, $0}' | sort | tail -n 1 \
+            | cut -d' ' -f2) || true
+          if [ -z "${tag}" ] || [[ "${tag##*-}" < "${since}" ]]; then
+            echo "::warning::No snapshot staged by this run;" \
+              "'latest' stays where it is"
+            tag=""
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+      - name: "Load registry credential"
+        id: credential
+        if: steps.staged.outputs.tag != ''
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/credential-load-action@c4bf64f187865afb318669d8c9a95147c9e9d832  # v2.1.1
+        with:
+          # yamllint disable-line rule:line-length
+          op_service_account_token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          vault_mapping_json: ${{ secrets.VAULT_MAPPING_JSON }}
+          credential_name: "oom-readiness"
+          credential_grants_json: ${{ vars.CREDENTIAL_LOAD_GRANTS }}
+          export_env: "false"
+      - name: "Login to snapshot registry"
+        if: steps.staged.outputs.tag != ''
+        # yamllint disable-line rule:line-length
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
+        with:
+          registry: "nexus3.onap.org:10003"
+          username: "oom-readiness"
+          password: ${{ steps.credential.outputs.credential }}
+      - name: "Move latest"
+        if: steps.staged.outputs.tag != ''
+        shell: bash
+        env:
+          SOURCE: ${{ steps.staged.outputs.tag }}
+        run: |
+          # --prefer-index=false copies the manifest byte for byte, rather
+          # than wrapping it in a new index, so 'latest' gets the staged
+          # digest.
+          docker buildx imagetools create --prefer-index=false \
+            --tag "${IMAGE}:latest" "${IMAGE}:${SOURCE}"
+          digest() {
+            docker buildx imagetools inspect "$1" \
+              --format '{{json .Manifest}}' | jq -er .digest
+          }
+          want=$(digest "${IMAGE}:${SOURCE}")
+          got=$(digest "${IMAGE}:latest")
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::latest is ${got}, expected ${want}"
+            exit 1
+          fi
+          {
+            echo "## Snapshot latest"
+            echo ""
+            echo "\`${IMAGE}:latest\` now holds \`${SOURCE}\` (\`${want}\`)"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   # Report the overall workflow conclusion back to Gerrit as a comment
   # (comment-only: merge pipelines never vote).
   report:
     if: ${{ always() && inputs.GERRIT_DISABLED != true }}
-    needs: [notify, merge]
+    needs: [notify, merge, tag-latest]
     runs-on: ubuntu-latest
     permissions:
       contents: read
